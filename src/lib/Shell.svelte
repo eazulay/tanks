@@ -6,8 +6,14 @@
 	let {
 		position,
 		velocity,
-		onremove
-	}: { position: THREE.Vector3; velocity: THREE.Vector3; onremove?: () => void } = $props();
+		onremove,
+		onimpact
+	}: {
+		position: THREE.Vector3;
+		velocity: THREE.Vector3;
+		onremove?: () => void;
+		onimpact?: (position: THREE.Vector3) => void;
+	} = $props();
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
@@ -27,7 +33,6 @@
 	const _q = new THREE.Quaternion();
 
 	let groupRef: THREE.Group | null = null;
-	let stuck = false;
 
 	interface RingState {
 		mesh: THREE.Mesh;
@@ -97,8 +102,6 @@
 			}
 		}
 
-		if (stuck) return;
-
 		// Physics
 		vel.y -= GRAVITY * delta;
 		pos.x += vel.x * delta;
@@ -106,7 +109,7 @@
 		pos.z += vel.z * delta;
 
 		// Disappear once the shell has fallen well below the firing height (out of view)
-		if (pos.y < position.y - 10) {
+		if (pos.y < position.y - 15) {
 			onremove?.();
 			return;
 		}
@@ -127,21 +130,23 @@
 			}
 			prevY = pos.y;
 
-			// Terrain impact — stick, shifting the shell so its nose sits at terrain level
-			// and the rear half is guaranteed visible above ground
 			const groundY = getTerrainHeight(pos.x, pos.z);
 			if (pos.y <= groundY) {
-				stuck = true;
-				const HALF_LEN = 0.19; // half the cylinder length (0.38 / 2)
-				const EMBED = 0.38 * 0.25; // bury front 25% below terrain
-				pos.y = groundY - HALF_LEN * _dir.y - EMBED;
-				if (groupRef) groupRef.position.setY(pos.y);
+				pos.y = groundY;
+				onimpact?.(pos.clone());
+				onremove?.();
+				return;
 			}
 		}
 	});
 </script>
 
-<T.Group oncreate={(ref) => { groupRef = ref; }} position={[position.x, position.y, position.z]}>
+<T.Group
+	oncreate={(ref) => {
+		groupRef = ref;
+	}}
+	position={[position.x, position.y, position.z]}
+>
 	<T.Mesh castShadow>
 		<T.CylinderGeometry args={[0.035, 0.055, 0.38, 8]} />
 		<T.MeshStandardMaterial

@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## License
+
+Copyright (c) 2026 Eyal Azulay. All rights reserved (`UNLICENSED`). Do not suggest changing to a permissive license.
+
 ## Commands
 
 ```bash

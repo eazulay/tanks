@@ -4,6 +4,7 @@
 	import { setContext } from 'svelte';
 	import Tank from '$lib/Tank.svelte';
 	import Shell from '$lib/Shell.svelte';
+	import Explosion from '$lib/Explosion.svelte';
 
 	const { scene } = useThrelte();
 	scene.background = new THREE.Color('#87CEEB');
@@ -82,6 +83,37 @@
 	}
 	setContext('isInBounds', isInBounds);
 
+	const CRATER_DEPTH = 0.75;
+
+	function deformTerrain(wx: number, wz: number) {
+		const cellSize = WORLD_SIZE / GRID_SEGS;
+		const col = Math.round((wx + WORLD_SIZE / 2) / cellSize);
+		const row = Math.round((wz + WORLD_SIZE / 2) / cellSize);
+		if (row < 0 || row >= N || col < 0 || col >= N) return;
+		const i = row * N + col;
+		const posAttr = terrainGeo.attributes.position as THREE.BufferAttribute;
+		const colAttr = terrainGeo.attributes.color as THREE.BufferAttribute;
+		heights[i] -= CRATER_DEPTH;
+		posAttr.setY(i, heights[i]);
+		colAttr.setXYZ(i, 0.08, 0.06, 0.05);
+		posAttr.needsUpdate = true;
+		colAttr.needsUpdate = true;
+		terrainGeo.computeVertexNormals();
+	}
+
+	function raiseTerrain(wx: number, wz: number, amount: number) {
+		const cellSize = WORLD_SIZE / GRID_SEGS;
+		const col = Math.round((wx + WORLD_SIZE / 2) / cellSize);
+		const row = Math.round((wz + WORLD_SIZE / 2) / cellSize);
+		if (row < 0 || row >= N || col < 0 || col >= N) return;
+		const i = row * N + col;
+		const posAttr = terrainGeo.attributes.position as THREE.BufferAttribute;
+		heights[i] += amount;
+		posAttr.setY(i, heights[i]);
+		posAttr.needsUpdate = true;
+		terrainGeo.computeVertexNormals();
+	}
+
 	interface ShellInstance {
 		id: number;
 		position: THREE.Vector3;
@@ -96,6 +128,22 @@
 
 	function removeShell(id: number) {
 		shells = shells.filter((s) => s.id !== id);
+	}
+
+	interface ExplodeInstance {
+		id: number;
+		position: THREE.Vector3;
+	}
+	let explosions = $state<ExplodeInstance[]>([]);
+	let nextExplodeId = 0;
+
+	function handleImpact(position: THREE.Vector3) {
+		deformTerrain(position.x, position.z);
+		explosions.push({ id: nextExplodeId++, position });
+	}
+
+	function removeExplosion(id: number) {
+		explosions = explosions.filter((e) => e.id !== id);
 	}
 
 	let tankRef: { reset: () => void } | undefined;
@@ -144,6 +192,7 @@
 		}
 		terrainGeo.setAttribute('color', new THREE.BufferAttribute(colorsArr, 3));
 		shells = [];
+		explosions = [];
 		tankRef?.reset();
 	}
 
@@ -170,5 +219,19 @@
 <Tank controlled chaseCamera bind:this={tankRef} onfire={handleFire} />
 
 {#each shells as s (s.id)}
-	<Shell position={s.position} velocity={s.velocity} onremove={() => removeShell(s.id)} />
+	<Shell
+		position={s.position}
+		velocity={s.velocity}
+		onremove={() => removeShell(s.id)}
+		onimpact={handleImpact}
+	/>
+{/each}
+
+{#each explosions as e (e.id)}
+	<Explosion
+		position={e.position}
+		craterDepth={CRATER_DEPTH}
+		onrockland={raiseTerrain}
+		onremove={() => removeExplosion(e.id)}
+	/>
 {/each}
