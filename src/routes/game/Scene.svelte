@@ -22,13 +22,13 @@
 		const h = new Float32Array(N * N);
 
 		// Seed top-left corner at a random base elevation in [-10, 40]
-		h[0] = Math.random() * 50 - 10;
+		h[0] = Math.random() * 45 - 10;
 
 		// Walk the top row — used as upper constraint for the first interior row
 		for (let c = 1; c < N - 1; c++) {
 			const prev = h[c - 1];
 			const lo = Math.max(-10, prev - MAX_STEP_HEIGHT);
-			const hi = Math.min(40, prev + MAX_STEP_HEIGHT);
+			const hi = Math.min(35, prev + MAX_STEP_HEIGHT);
 			h[c] = lo + Math.random() * (hi - lo);
 		}
 
@@ -36,7 +36,7 @@
 		for (let r = 1; r < N - 1; r++) {
 			const prev = h[(r - 1) * N];
 			const lo = Math.max(-10, prev - MAX_STEP_HEIGHT);
-			const hi = Math.min(40, prev + MAX_STEP_HEIGHT);
+			const hi = Math.min(35, prev + MAX_STEP_HEIGHT);
 			h[r * N] = lo + Math.random() * (hi - lo);
 		}
 
@@ -44,7 +44,7 @@
 		for (let r = 1; r < N - 1; r++) {
 			for (let c = 1; c < N - 1; c++) {
 				let lo = -10,
-					hi = 40;
+					hi = 35;
 				const left = h[r * N + c - 1];
 				lo = Math.max(lo, left - MAX_STEP_HEIGHT);
 				hi = Math.min(hi, left + MAX_STEP_HEIGHT);
@@ -194,7 +194,7 @@
 				g = 0.71;
 				b = 0.51;
 			} // beach sand
-			else if (h < 30) {
+			else if (h < 26) {
 				r = 0.29;
 				g = 0.49;
 				b = 0.25;
