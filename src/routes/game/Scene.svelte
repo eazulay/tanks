@@ -12,27 +12,45 @@
 	let { restartKey = 0 } = $props();
 
 	// --- Terrain generation ---
-	const GRID_SEGS = 100;
-	const WORLD_SIZE = 500;
+	const GRID_SEGS = 150;
+	const WORLD_SIZE = 750;
 	const N = GRID_SEGS + 1;
-	const MAX_STEP_HEIGHT = 2.8;
+	const MAX_STEP_HEIGHT = 3.2;
 	const BORDER_RAISE = 6.5;
 
 	function generateHeights(): Float32Array {
 		const h = new Float32Array(N * N);
-		// Generate interior vertices only
+
+		// Seed top-left corner at a random base elevation in [-10, 40]
+		h[0] = Math.random() * 50 - 10;
+
+		// Walk the top row — used as upper constraint for the first interior row
+		for (let c = 1; c < N - 1; c++) {
+			const prev = h[c - 1];
+			const lo = Math.max(-10, prev - MAX_STEP_HEIGHT);
+			const hi = Math.min(40, prev + MAX_STEP_HEIGHT);
+			h[c] = lo + Math.random() * (hi - lo);
+		}
+
+		// Walk the left column — used as left constraint for each row
+		for (let r = 1; r < N - 1; r++) {
+			const prev = h[(r - 1) * N];
+			const lo = Math.max(-10, prev - MAX_STEP_HEIGHT);
+			const hi = Math.min(40, prev + MAX_STEP_HEIGHT);
+			h[r * N] = lo + Math.random() * (hi - lo);
+		}
+
+		// Generate interior vertices — every vertex constrained by both left and upper neighbour
 		for (let r = 1; r < N - 1; r++) {
 			for (let c = 1; c < N - 1; c++) {
 				let lo = -10,
-					hi = 150;
+					hi = 40;
 				const left = h[r * N + c - 1];
 				lo = Math.max(lo, left - MAX_STEP_HEIGHT);
 				hi = Math.min(hi, left + MAX_STEP_HEIGHT);
-				if (r > 1) {
-					const v = h[(r - 1) * N + c];
-					lo = Math.max(lo, v - MAX_STEP_HEIGHT);
-					hi = Math.min(hi, v + MAX_STEP_HEIGHT);
-				}
+				const above = h[(r - 1) * N + c];
+				lo = Math.max(lo, above - MAX_STEP_HEIGHT);
+				hi = Math.min(hi, above + MAX_STEP_HEIGHT);
 				h[r * N + c] = lo > hi ? (lo + hi) / 2 : lo + Math.random() * (hi - lo);
 			}
 		}
@@ -176,7 +194,7 @@
 				g = 0.71;
 				b = 0.51;
 			} // beach sand
-			else if (h < 100) {
+			else if (h < 30) {
 				r = 0.29;
 				g = 0.49;
 				b = 0.25;
