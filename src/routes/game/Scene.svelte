@@ -66,6 +66,97 @@
 		return h;
 	}
 
+	const textureLoader = new THREE.TextureLoader();
+	function loadTex(path: string, srgb = false): THREE.Texture {
+		const tex = textureLoader.load(path);
+		tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+		tex.repeat.set(60, 60);
+		if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
+		return tex;
+	}
+
+	const grassColorMap = loadTex('/textures/Grass006_1K-JPG_Color.jpg', true);
+	const grassNormalMap = loadTex('/textures/Grass006_1K-JPG_NormalGL.jpg');
+	const grassRoughnessMap = loadTex('/textures/Grass006_1K-JPG_Roughness.jpg');
+
+	const sandColorMap = loadTex('/textures/Ground079L_1K-JPG_Color.jpg', true);
+	const sandNormalMap = loadTex('/textures/Ground079L_1K-JPG_NormalGL.jpg');
+	const sandRoughnessMap = loadTex('/textures/Ground079L_1K-JPG_Roughness.jpg');
+
+	const snowColorMap = loadTex('/textures/Snow010A_1K-JPG_Color.jpg', true);
+	const snowNormalMap = loadTex('/textures/Snow010A_1K-JPG_NormalGL.jpg');
+	const snowRoughnessMap = loadTex('/textures/Snow010A_1K-JPG_Roughness.jpg');
+
+	const terrainMaterial = new THREE.MeshStandardMaterial({
+		vertexColors: true,
+		map: grassColorMap,
+		normalMap: grassNormalMap,
+		roughnessMap: grassRoughnessMap,
+		normalScale: new THREE.Vector2(0.8, 0.8)
+	});
+
+	// Three-way biome blend via onBeforeCompile:
+	//   sand  → grass: smoothstep(3, 5, h)
+	//   grass → snow:  smoothstep(24, 27, h)
+	terrainMaterial.onBeforeCompile = (shader) => {
+		shader.uniforms.sandColorMap = { value: sandColorMap };
+		shader.uniforms.sandNormalMap = { value: sandNormalMap };
+		shader.uniforms.sandRoughnessMap = { value: sandRoughnessMap };
+		shader.uniforms.snowColorMap = { value: snowColorMap };
+		shader.uniforms.snowNormalMap = { value: snowNormalMap };
+		shader.uniforms.snowRoughnessMap = { value: snowRoughnessMap };
+
+		shader.vertexShader = 'varying float vHeight;\n' + shader.vertexShader;
+		shader.vertexShader = shader.vertexShader.replace(
+			'#include <begin_vertex>',
+			'#include <begin_vertex>\nvHeight = position.y;'
+		);
+
+		shader.fragmentShader =
+			'varying float vHeight;\n' +
+			'uniform sampler2D sandColorMap;\n' +
+			'uniform sampler2D sandNormalMap;\n' +
+			'uniform sampler2D sandRoughnessMap;\n' +
+			'uniform sampler2D snowColorMap;\n' +
+			'uniform sampler2D snowNormalMap;\n' +
+			'uniform sampler2D snowRoughnessMap;\n' +
+			shader.fragmentShader;
+
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <map_fragment>',
+			`#ifdef USE_MAP
+	float grassBlend = smoothstep(3.0, 5.0, vHeight);
+	float snowBlend = smoothstep(24.0, 27.0, vHeight);
+	vec4 sandGrass = mix(texture2D(sandColorMap, vMapUv), texture2D(map, vMapUv), grassBlend);
+	vec4 sampledDiffuseColor = mix(sandGrass, texture2D(snowColorMap, vMapUv), snowBlend);
+	diffuseColor *= sampledDiffuseColor;
+#endif`
+		);
+
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <roughnessmap_fragment>',
+			`float roughnessFactor = roughness;
+#ifdef USE_ROUGHNESSMAP
+	float grassBlendR = smoothstep(3.0, 5.0, vHeight);
+	float snowBlendR = smoothstep(24.0, 27.0, vHeight);
+	float sandGrassR = mix(texture2D(sandRoughnessMap, vMapUv).g, texture2D(roughnessMap, vMapUv).g, grassBlendR);
+	roughnessFactor *= mix(sandGrassR, texture2D(snowRoughnessMap, vMapUv).g, snowBlendR);
+#endif`
+		);
+
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <normal_fragment_maps>',
+			`#ifdef USE_NORMALMAP_TANGENTSPACE
+	float grassBlendN = smoothstep(3.0, 5.0, vHeight);
+	float snowBlendN = smoothstep(24.0, 27.0, vHeight);
+	vec3 sandGrassN = mix(texture2D(sandNormalMap, vNormalMapUv).xyz, texture2D(normalMap, vNormalMapUv).xyz, grassBlendN);
+	vec3 mapN = mix(sandGrassN, texture2D(snowNormalMap, vNormalMapUv).xyz, snowBlendN) * 2.0 - 1.0;
+	mapN.xy *= normalScale;
+	normal = normalize(tbn * mapN);
+#endif`
+		);
+	};
+
 	let heights: Float32Array<ArrayBufferLike>;
 	let terrainGeo = $state(new THREE.PlaneGeometry());
 
@@ -185,25 +276,15 @@
 			const h = heights[i];
 			let r: number, g: number, b: number;
 			if (h < 0) {
-				r = 0.1;
-				g = 0.43;
-				b = 0.66;
-			} // water blue
-			else if (h < 4) {
-				r = 0.83;
-				g = 0.71;
-				b = 0.51;
-			} // beach sand
-			else if (h < 26) {
-				r = 0.29;
-				g = 0.49;
-				b = 0.25;
-			} // grass green
+				r = 0.35;
+				g = 0.55;
+				b = 0.9;
+			} // underwater blue tint
 			else {
-				r = 0.93;
-				g = 0.94;
-				b = 0.96;
-			} // snow white
+				r = 1;
+				g = 1;
+				b = 1;
+			} // let texture show naturally
 			colorsArr[i * 3] = r;
 			colorsArr[i * 3 + 1] = g;
 			colorsArr[i * 3 + 2] = b;
@@ -225,7 +306,7 @@
 </script>
 
 <T.Mesh geometry={terrainGeo} receiveShadow castShadow>
-	<T.MeshStandardMaterial vertexColors />
+	<T is={terrainMaterial} attach="material" />
 </T.Mesh>
 
 <!-- Water plane at sea level -->
