@@ -134,11 +134,6 @@
 						onclick={() => document.documentElement.requestPointerLock()}
 						>Use Mouse Control</button
 					>
-					<button
-						class="green-btn"
-						onclick={() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyC' }))}
-						>Camera (C)</button
-					>
 				</div>
 				<div class="buttons">
 					<button onclick={() => restartKey++}>Restart (R)</button>

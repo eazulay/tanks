@@ -64,13 +64,7 @@
 	// Reusable scratch objects to avoid per-frame allocations in useTask
 	const _X_AXIS = new THREE.Vector3(1, 0, 0);
 	const _Y_AXIS = new THREE.Vector3(0, 1, 0);
-	const _Z_AXIS = new THREE.Vector3(0, 0, 1);
-	const _scratchVec = new THREE.Vector3();
 	const _scratchEuler = new THREE.Euler(0, 0, 0, 'XYZ');
-
-	// Desired barrel direction in hull-heading space (stabilized against pitch/roll changes).
-	// Hull heading is NOT factored in so steering doesn't counter-rotate the turret.
-	const aimDir = new THREE.Vector3(0, 0, -1);
 
 	// Custom hull geometry: trapezoidal prism, bottom wider than top.
 	// Front slopes more than back so front/back are visually distinct.
@@ -160,7 +154,6 @@
 		turretRightHeld = false;
 	let barrelUpHeld = false,
 		barrelDownHeld = false;
-	let cupolaCamera = $state(false);
 	let mouseDX = 0,
 		mouseDY = 0;
 
@@ -175,7 +168,6 @@
 			if (e.code === 'ArrowRight') turretRightHeld = true;
 			if (e.code === 'ArrowUp') barrelUpHeld = true;
 			if (e.code === 'ArrowDown') barrelDownHeld = true;
-			if (e.code === 'KeyC') cupolaCamera = !cupolaCamera;
 		};
 		const onKeyUp = (e: KeyboardEvent) => {
 			if (e.code === 'KeyW') upHeld = false;
@@ -187,15 +179,11 @@
 			if (e.code === 'ArrowUp') barrelUpHeld = false;
 			if (e.code === 'ArrowDown') barrelDownHeld = false;
 		};
-		// Mouse aim — only active in cupola camera mode; movementX/Y are raw deltas during pointer lock
 		const onMouseMove = (e: MouseEvent) => {
 			if (document.pointerLockElement !== null) {
 				mouseDX += e.movementX;
 				mouseDY += e.movementY;
 			}
-		};
-		const onSetCupola = () => {
-			cupolaCamera = true;
 		};
 		const onTankFire = (e: Event) => {
 			fire((e as CustomEvent<{ chargeLevel: number }>).detail.chargeLevel);
@@ -203,13 +191,11 @@
 		window.addEventListener('keydown', onKeyDown);
 		window.addEventListener('keyup', onKeyUp);
 		window.addEventListener('mousemove', onMouseMove);
-		window.addEventListener('set-cupola', onSetCupola);
 		window.addEventListener('tank-fire', onTankFire);
 		return () => {
 			window.removeEventListener('keydown', onKeyDown);
 			window.removeEventListener('keyup', onKeyUp);
 			window.removeEventListener('mousemove', onMouseMove);
-			window.removeEventListener('set-cupola', onSetCupola);
 			window.removeEventListener('tank-fire', onTankFire);
 		};
 	});
@@ -279,10 +265,8 @@
 		tankRoll = 0;
 		wheelSpinLeft = 0;
 		wheelSpinRight = 0;
-		cupolaCamera = false;
 		turretHeading = 0;
 		barrelElevation = 0;
-		aimDir.set(0, 0, -1);
 		snapTankToTerrain(0, 0);
 		resetCamera();
 	}
@@ -380,10 +364,7 @@
 		wheelSpinRight += (spinSpeed + angVel) * delta;
 
 		// Turret and barrel
-		const hasMouse = mouseDX !== 0 || mouseDY !== 0;
-		const hasKeyboardAim = turretLeftHeld || turretRightHeld || barrelUpHeld || barrelDownHeld;
-
-		// Keyboard aim — local barrel/turret space, unchanged
+		// Keyboard aim
 		if (turretLeftHeld) turretHeading += TURRET_SPEED * delta;
 		if (turretRightHeld) turretHeading -= TURRET_SPEED * delta;
 		if (barrelUpHeld)
@@ -391,93 +372,38 @@
 		if (barrelDownHeld)
 			barrelElevation = Math.max(BARREL_MIN, barrelElevation - BARREL_SPEED * delta);
 
-		// Mouse aim — applied directly to aimDir in heading/world space so hull roll doesn't
-		// couple mouse-Y into turret-heading. Mouse-X rotates around world Y; mouse-Y rotates
-		// around the horizontal right vector perpendicular to the current aim direction.
-		if (hasMouse) {
-			aimDir.applyAxisAngle(_Y_AXIS, -mouseDX * MOUSE_TURRET_SENS);
-			const adx = aimDir.x, adz = aimDir.z;
-			const horizLen = Math.sqrt(adx * adx + adz * adz);
-			if (horizLen > 0.001) {
-				_scratchVec.set(-adz / horizLen, 0, adx / horizLen);
-				aimDir.applyAxisAngle(_scratchVec, -mouseDY * MOUSE_BARREL_SENS);
-			}
-			aimDir.normalize();
+		// Mouse aim — directly controls turret heading and barrel elevation
+		if (mouseDX !== 0 || mouseDY !== 0) {
+			turretHeading -= mouseDX * MOUSE_TURRET_SENS;
+			barrelElevation = Math.max(
+				BARREL_MIN,
+				Math.min(BARREL_MAX, barrelElevation - mouseDY * MOUSE_BARREL_SENS)
+			);
 			mouseDX = 0;
 			mouseDY = 0;
 		}
 
-		// Aim stabilization: keep barrel pointing in the same world direction when hull pitch/roll changes.
-		// aimDir lives in hull-heading space so steering doesn't counter-rotate the turret.
-		//   Forward pass (heading space): aimDir = Rz(roll)*Rx(pitch) * Ry(th) * Rx(be) * (0,0,-1)
-		//   Inverse  (tilt-group space): D_tilt  = Rx(-pitch)*Rz(-roll) * aimDir
-		//   Then: be = asin(D_tilt.y),  th = atan2(-D_tilt.x, -D_tilt.z)
-		if (hasKeyboardAim) {
-			// Keyboard adjusted — encode (be, th) into aimDir via forward pass
-			aimDir.set(0, 0, -1);
-			aimDir.applyAxisAngle(_X_AXIS, barrelElevation);
-			aimDir.applyAxisAngle(_Y_AXIS, turretHeading);
-			_scratchEuler.set(tankPitch, 0, tankRoll, 'XYZ');
-			aimDir.applyEuler(_scratchEuler);
-		} else {
-			// Hull tilted — solve for (turretHeading, barrelElevation) that preserves aimDir
-			_scratchVec.copy(aimDir);
-			_scratchVec.applyAxisAngle(_Z_AXIS, -tankRoll);
-			_scratchVec.applyAxisAngle(_X_AXIS, -tankPitch);
-			// _scratchVec is now the required direction in tilt-group local space
-			const dy = Math.max(-1, Math.min(1, _scratchVec.y));
-			barrelElevation = Math.max(BARREL_MIN, Math.min(BARREL_MAX, Math.asin(dy)));
-			const hx = _scratchVec.x,
-				hz = _scratchVec.z;
-			if (hx * hx + hz * hz > 1e-6) {
-				turretHeading = Math.atan2(-hx, -hz);
-			}
-		}
-
-		// Camera
+		// Camera — follows behind the barrel direction (turret heading relative to hull)
 		if (chaseCamera) {
-			if (cupolaCamera) {
-				// Commander's cupola view: place camera at cupola world position, look forward
-				_scratchVec.set(0, 1.65, -0.1); // cupola in turret-group space
-				_scratchVec.applyAxisAngle(_Y_AXIS, turretHeading); // turret rotation
-				_scratchEuler.set(tankPitch, 0, tankRoll, 'XYZ');
-				_scratchVec.applyEuler(_scratchEuler); // hull tilt
-				_scratchVec.applyAxisAngle(_Y_AXIS, tankHeading); // hull heading
-				_scratchVec.add(tankPosition);
-				const cpLocal = new THREE.Vector3(_scratchVec.x, _scratchVec.y, _scratchVec.z);
-				const tc = Math.min(1, 8 * delta);
-				cameraPosition = new THREE.Vector3(
-					cameraPosition.x + (cpLocal.x - cameraPosition.x) * tc,
-					cameraPosition.y + (cpLocal.y - cameraPosition.y) * tc,
-					cameraPosition.z + (cpLocal.z - cameraPosition.z) * tc
-				);
-				// Stabilized view: horizon-locked, follows turret heading + barrel elevation
-				const absHeading = tankHeading + turretHeading;
-				const elevFraction = Math.sin(barrelElevation) * 0.4;
-				cameraRef?.lookAt(
-					cpLocal.x - Math.sin(absHeading) * 20,
-					cpLocal.y + elevFraction * 20,
-					cpLocal.z - Math.cos(absHeading) * 20
-				);
-			} else {
-				const t = Math.min(1, CHASE_LERP * delta);
-				const targetCamX = tankPosition.x + Math.sin(tankHeading) * CAMERA_BEHIND;
-				const targetCamZ = tankPosition.z + Math.cos(tankHeading) * CAMERA_BEHIND;
-				const targetCamY = Math.max(
-					tankPosition.y + CAMERA_HEIGHT,
-					getTerrainHeight(targetCamX, targetCamZ) + CAMERA_HEIGHT
-				);
-				cameraPosition = new THREE.Vector3(
-					cameraPosition.x + (targetCamX - cameraPosition.x) * t,
-					cameraPosition.y + (targetCamY - cameraPosition.y) * t,
-					cameraPosition.z + (targetCamZ - cameraPosition.z) * t
-				);
-				cameraRef?.lookAt(
-					tankPosition.x,
-					tankPosition.y + CAMERA_HEIGHT * 0.5 + Math.sin(barrelElevation) * CAMERA_BEHIND * 0.4,
-					tankPosition.z
-				);
-			}
+			const t = Math.min(1, CHASE_LERP * delta);
+			const absHeading = tankHeading + turretHeading;
+			const elevFraction = Math.sin(barrelElevation);
+			const targetCamX = tankPosition.x + Math.sin(absHeading) * CAMERA_BEHIND;
+			const targetCamZ = tankPosition.z + Math.cos(absHeading) * CAMERA_BEHIND;
+			const targetCamY = Math.max(
+				tankPosition.y + CAMERA_HEIGHT + elevFraction * CAMERA_BEHIND * 0.5,
+				getTerrainHeight(targetCamX, targetCamZ) + CAMERA_HEIGHT
+			);
+			cameraPosition = new THREE.Vector3(
+				cameraPosition.x + (targetCamX - cameraPosition.x) * t,
+				cameraPosition.y + (targetCamY - cameraPosition.y) * t,
+				cameraPosition.z + (targetCamZ - cameraPosition.z) * t
+			);
+			cameraRef?.lookAt(
+				tankPosition.x,
+				tankPosition.y + CAMERA_HEIGHT * 0.5 + elevFraction * CAMERA_BEHIND * 0.4,
+				tankPosition.z
+			);
 
 			if (lightRef) {
 				lightRef.position.set(
