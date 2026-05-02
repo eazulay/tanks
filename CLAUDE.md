@@ -86,6 +86,7 @@ wheelSpinRight += (speed + angVel * factor) * delta;
 
 **Controls (`Tank.svelte`):**
 - `W`/`S` — drive forward/back; `A`/`D` — steer left/right (hull)
+- `X` — handbrake: one tap decelerates to a full stop (`BRAKE_DECEL = 6`); cancelled early by pressing `W` or `S`
 - Arrow left/right — rotate turret; arrow up/down — elevate/depress barrel (clamped to −10°/+40°)
 - Mouse (when pointer-locked) — aim turret/barrel; directly updates `turretHeading`/`barrelElevation`
 

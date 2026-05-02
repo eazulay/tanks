@@ -14,6 +14,7 @@
 
 	// --- Constants ---
 	const ACCEL = 4;
+	const BRAKE_DECEL = 6;
 	const TURN_SPEED = 1.5; // radians per second
 	const TURRET_SPEED = 1.2; // radians per second
 	const BARREL_SPEED = 0.8; // radians per second
@@ -154,6 +155,7 @@
 		turretRightHeld = false;
 	let barrelUpHeld = false,
 		barrelDownHeld = false;
+	let braking = false;
 	let mouseDX = 0,
 		mouseDY = 0;
 
@@ -168,6 +170,7 @@
 			if (e.code === 'ArrowRight') turretRightHeld = true;
 			if (e.code === 'ArrowUp') barrelUpHeld = true;
 			if (e.code === 'ArrowDown') barrelDownHeld = true;
+			if (e.code === 'KeyX') braking = true;
 		};
 		const onKeyUp = (e: KeyboardEvent) => {
 			if (e.code === 'KeyW') upHeld = false;
@@ -267,6 +270,7 @@
 		wheelSpinRight = 0;
 		turretHeading = 0;
 		barrelElevation = 0;
+		braking = false;
 		snapTankToTerrain(0, 0);
 		resetCamera();
 	}
@@ -282,7 +286,16 @@
 		// Input — only when grounded
 		let angVel = 0;
 		if (velocityY === 0) {
-			if (upHeld) speed += ACCEL * delta;
+			if (upHeld || downHeld) braking = false;
+			if (braking) {
+				const decel = BRAKE_DECEL * delta;
+				if (Math.abs(speed) <= decel) {
+					speed = 0;
+					braking = false;
+				} else {
+					speed -= Math.sign(speed) * decel;
+				}
+			} else if (upHeld) speed += ACCEL * delta;
 			else if (downHeld) speed -= ACCEL * delta;
 			if (leftHeld) {
 				tankHeading += TURN_SPEED * delta;
@@ -377,7 +390,7 @@
 			turretHeading -= mouseDX * MOUSE_TURRET_SENS;
 			barrelElevation = Math.max(
 				BARREL_MIN,
-				Math.min(BARREL_MAX, barrelElevation - mouseDY * MOUSE_BARREL_SENS)
+				Math.min(BARREL_MAX, barrelElevation + mouseDY * MOUSE_BARREL_SENS)
 			);
 			mouseDX = 0;
 			mouseDY = 0;

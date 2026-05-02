@@ -121,28 +121,31 @@
 	{#if locked}
 		<div class="overlay">
 			<p class="hint">
-				Mouse / arrows · aim &nbsp;|&nbsp; Hold LMB / Space · charge, release · fire &nbsp;|&nbsp; Esc
-				· release mouse
+				WASD · drive &nbsp;|&nbsp; X · stop &nbsp;|&nbsp; Mouse / arrows · aim &nbsp;|&nbsp; Hold LMB
+				/ Space · charge, release · fire &nbsp;|&nbsp; Esc · release mouse
 			</p>
 		</div>
 	{:else}
 		<div class="overlay">
 			<div class="panel">
-				<div class="buttons">
-					<button
-						class="green-btn"
-						onclick={() => document.documentElement.requestPointerLock()}
-						>Use Mouse Control</button
-					>
+				<div class="layout">
+					<ul class="controls">
+						<li>WASD · drive</li>
+						<li>X · stop</li>
+						<li>Mouse / arrows · aim</li>
+						<li>Hold LMB / Space · charge, release · fire</li>
+						<li>Esc · release mouse</li>
+					</ul>
+					<div class="buttons">
+						<button
+							class="green-btn"
+							onclick={() => document.documentElement.requestPointerLock()}
+							>Mouse Control</button
+						>
+						<button onclick={() => restartKey++}>Restart (R)</button>
+						<a href="/" class="button">Quit</a>
+					</div>
 				</div>
-				<div class="buttons">
-					<button onclick={() => restartKey++}>Restart (R)</button>
-					<a href="/" class="button">Quit</a>
-				</div>
-				<p class="controls">
-					WASD · drive &nbsp;|&nbsp; Mouse / arrows · aim &nbsp;|&nbsp; Hold LMB / Space · charge,
-					release · fire &nbsp;|&nbsp; Esc · release mouse
-				</p>
 			</div>
 		</div>
 	{/if}
@@ -205,24 +208,32 @@
 		border: 1px solid #555;
 		border-radius: 8px;
 		padding: 1.5rem 2rem;
-		text-align: center;
 		color: #eee;
-		display: flex;
-		flex-direction: column;
-		gap: 0.85rem;
 		pointer-events: auto;
+	}
+
+	.layout {
+		display: flex;
+		gap: 1.5rem;
+		align-items: flex-start;
 	}
 
 	.buttons {
 		display: flex;
-		gap: 0.75rem;
-		justify-content: center;
+		flex-direction: column;
+		gap: 0.5rem;
+		flex-shrink: 0;
 	}
 
 	.controls {
 		margin: 0;
+		padding: 0;
+		list-style: none;
 		font-size: 0.75rem;
 		color: #999;
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
 	}
 
 	.hint {
