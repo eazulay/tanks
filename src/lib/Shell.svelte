@@ -1,7 +1,8 @@
 <script lang="ts">
 	import * as THREE from 'three';
-	import { T, useTask, useThrelte } from '@threlte/core';
-	import { getContext, onDestroy } from 'svelte';
+	import { T, useTask } from '@threlte/core';
+	import { getContext } from 'svelte';
+	import Splash from './Splash.svelte';
 
 	let {
 		position,
@@ -17,12 +18,8 @@
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
-	const { scene } = useThrelte();
 
 	const GRAVITY = 10;
-	const SPLASH_MAX_RADIUS = 6;
-	const SPLASH_RING_DURATION = 2.0;
-	const SPLASH_DELAYS = [0, 0.4, 0.8];
 
 	const pos = position.clone();
 	const vel = velocity.clone();
@@ -33,73 +30,30 @@
 	const _q = new THREE.Quaternion();
 
 	let groupRef: THREE.Group | null = null;
+	let done = false;
 
-	interface RingState {
-		mesh: THREE.Mesh;
-		mat: THREE.MeshBasicMaterial;
-		delay: number;
+	interface SplashEntry {
+		id: number;
+		x: number;
+		z: number;
 	}
-	interface SplashInstance {
-		rings: RingState[];
-		elapsed: number;
-	}
-	const splashes: SplashInstance[] = [];
+
+	let splashes = $state<SplashEntry[]>([]);
+	let nextSplashId = 0;
 
 	function startSplash(x: number, z: number) {
-		const rings: RingState[] = SPLASH_DELAYS.map((delay) => {
-			const mat = new THREE.MeshBasicMaterial({
-				color: '#88bbcc',
-				transparent: true,
-				opacity: 0.7,
-				side: THREE.DoubleSide
-			});
-			const mesh = new THREE.Mesh(new THREE.RingGeometry(0, 0.01, 64), mat);
-			mesh.rotation.x = -Math.PI / 2;
-			mesh.position.set(x, 0.05, z);
-			scene.add(mesh);
-			return { mesh, mat, delay };
-		});
-		splashes.push({ rings, elapsed: 0 });
+		splashes.push({ id: nextSplashId++, x, z });
 	}
 
-	function cleanupSplash(splash: SplashInstance) {
-		for (const ring of splash.rings) {
-			scene.remove(ring.mesh);
-			ring.mesh.geometry.dispose();
-		}
+	function removeSplash(id: number) {
+		splashes = splashes.filter((s) => s.id !== id);
 	}
-
-	onDestroy(() => {
-		for (const splash of splashes) cleanupSplash(splash);
-	});
 
 	useTask((delta) => {
-		// Update all active splashes
-		for (let i = splashes.length - 1; i >= 0; i--) {
-			const splash = splashes[i];
-			splash.elapsed += delta;
-			let allDone = true;
-			for (const ring of splash.rings) {
-				const t = splash.elapsed - ring.delay;
-				if (t < 0) {
-					allDone = false;
-					continue;
-				}
-				const progress = t / SPLASH_RING_DURATION;
-				if (progress >= 1) {
-					ring.mesh.visible = false;
-					continue;
-				}
-				allDone = false;
-				const radius = progress * SPLASH_MAX_RADIUS;
-				ring.mesh.geometry.dispose();
-				ring.mesh.geometry = new THREE.RingGeometry(radius, radius + 0.3, 64);
-				ring.mat.opacity = 0.7 * (1 - progress);
-			}
-			if (allDone) {
-				cleanupSplash(splash);
-				splashes.splice(i, 1);
-			}
+		// Shell hit terrain — keep task alive until splashes finish, then remove
+		if (done) {
+			if (splashes.length === 0) onremove?.();
+			return;
 		}
 
 		// Physics
@@ -108,7 +62,7 @@
 		pos.y += vel.y * delta;
 		pos.z += vel.z * delta;
 
-		// Disappear once the shell has fallen well below the firing height (out of view)
+		// Disappeared out of view
 		if (pos.y < position.y - 15) {
 			onremove?.();
 			return;
@@ -132,9 +86,9 @@
 
 			const groundY = getTerrainHeight(pos.x, pos.z);
 			if (pos.y <= groundY) {
-				pos.y = groundY;
 				onimpact?.(pos.clone());
-				onremove?.();
+				done = true;
+				if (groupRef) groupRef.visible = false;
 				return;
 			}
 		}
@@ -142,9 +96,7 @@
 </script>
 
 <T.Group
-	oncreate={(ref) => {
-		groupRef = ref;
-	}}
+	oncreate={(ref) => { groupRef = ref; }}
 	position={[position.x, position.y, position.z]}
 >
 	<T.Mesh castShadow>
@@ -158,3 +110,7 @@
 		/>
 	</T.Mesh>
 </T.Group>
+
+{#each splashes as s (s.id)}
+	<Splash x={s.x} z={s.z} onremove={() => removeSplash(s.id)} />
+{/each}

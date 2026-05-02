@@ -276,9 +276,9 @@
 			const h = heights[i];
 			let r: number, g: number, b: number;
 			if (h < 0) {
-				r = 0.35;
-				g = 0.55;
-				b = 0.9;
+				r = 0.2;
+				g = 0.45;
+				b = 0.85;
 			} // underwater blue tint
 			else {
 				r = 1;
@@ -309,10 +309,10 @@
 	<T is={terrainMaterial} attach="material" />
 </T.Mesh>
 
-<!-- Water plane at sea level -->
+<!-- Water surface at y=0 — DoubleSide so it renders as a blue ceiling when camera is below -->
 <T.Mesh rotation.x={-Math.PI / 2} position.y={0}>
 	<T.PlaneGeometry args={[WORLD_SIZE, WORLD_SIZE]} />
-	<T.MeshStandardMaterial color="#1a6fa8" transparent opacity={0.7} />
+	<T.MeshStandardMaterial color="#1a6fa8" transparent opacity={0.7} side={THREE.DoubleSide} />
 </T.Mesh>
 
 <Tank controlled chaseCamera bind:this={tankRef} onfire={handleFire} />

@@ -2,6 +2,7 @@
 	import * as THREE from 'three';
 	import { T, useTask } from '@threlte/core';
 	import { getContext, onDestroy } from 'svelte';
+	import Splash from './Splash.svelte';
 
 	let {
 		position,
@@ -41,6 +42,7 @@
 	interface Rock {
 		mesh: THREE.Mesh | null;
 		pos: THREE.Vector3;
+		prevY: number;
 		vel: THREE.Vector3;
 		angVel: THREE.Vector3;
 		scaleX: number;
@@ -59,6 +61,7 @@
 		return {
 			mesh: null,
 			pos: position.clone(),
+			prevY: position.y,
 			vel: new THREE.Vector3(
 				Math.cos(azimuth) * Math.cos(elev) * speed,
 				Math.sin(elev) * speed,
@@ -79,6 +82,18 @@
 	});
 
 	let elapsed = 0;
+
+	interface SplashEntry {
+		id: number;
+		x: number;
+		z: number;
+	}
+	let splashes = $state<SplashEntry[]>([]);
+	let nextSplashId = 0;
+
+	function removeSplash(id: number) {
+		splashes = splashes.filter((s) => s.id !== id);
+	}
 
 	onDestroy(() => {
 		fireballGeo.dispose();
@@ -107,10 +122,12 @@
 		for (const rock of rocks) {
 			if (rock.done) continue;
 			allRocksDone = false;
+			const prevY = rock.prevY;
 			rock.vel.y -= GRAVITY * delta;
 			rock.pos.x += rock.vel.x * delta;
 			rock.pos.y += rock.vel.y * delta;
 			rock.pos.z += rock.vel.z * delta;
+			rock.prevY = rock.pos.y;
 			if (rock.mesh) {
 				rock.mesh.position.copy(rock.pos);
 				rock.mesh.rotation.x += rock.angVel.x * delta;
@@ -118,7 +135,13 @@
 				rock.mesh.rotation.z += rock.angVel.z * delta;
 			}
 			let landed = elapsed > ROCK_MAX_TIME;
-			if (!landed && isInBounds(rock.pos.x, rock.pos.z)) {
+			if (!landed && elapsed > 0.15 && isInBounds(rock.pos.x, rock.pos.z)) {
+				// Splash when crossing the water surface (y=0) in a water area
+				if (getTerrainHeight(rock.pos.x, rock.pos.z) < 0) {
+					if ((prevY > 0 && rock.pos.y <= 0) || (prevY <= 0 && rock.pos.y > 0)) {
+						splashes.push({ id: nextSplashId++, x: rock.pos.x, z: rock.pos.z });
+					}
+				}
 				if (rock.pos.y <= getTerrainHeight(rock.pos.x, rock.pos.z)) {
 					landed = true;
 					onrockland?.(rock.pos.x, rock.pos.z, raisePerRock);
@@ -130,7 +153,7 @@
 			}
 		}
 
-		if (ft >= 1 && allRocksDone) {
+		if (ft >= 1 && allRocksDone && splashes.length === 0) {
 			stop();
 			onremove?.();
 		}
@@ -158,4 +181,8 @@
 		scale={[rock.scaleX, rock.scaleY, rock.scaleZ]}
 		castShadow
 	/>
+{/each}
+
+{#each splashes as s (s.id)}
+	<Splash x={s.x} z={s.z} onremove={() => removeSplash(s.id)} />
 {/each}
