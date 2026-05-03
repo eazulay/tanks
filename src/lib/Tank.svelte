@@ -100,39 +100,79 @@
 			[1, 2, 6, 5] // right  (+X)
 		];
 
+		// UV projection axes per face: [uAxis (0=x,1=y,2=z), vAxis]
+		const faceUVAxes: [number, number][] = [
+			[0, 2], // top    (+Y): u=x, v=z
+			[0, 2], // bottom (-Y): u=x, v=z
+			[0, 1], // front  (-Z): u=x, v=y
+			[0, 1], // back   (+Z): u=x, v=y
+			[2, 1], // left   (-X): u=z, v=y
+			[2, 1] //  right  (+X): u=z, v=y
+		];
+
 		const pos: number[] = [];
-		for (const [a, b, c, d] of quads) {
-			pos.push(
-				pts[a][0],
-				pts[a][1],
-				pts[a][2],
-				pts[b][0],
-				pts[b][1],
-				pts[b][2],
-				pts[c][0],
-				pts[c][1],
-				pts[c][2]
-			);
-			pos.push(
-				pts[a][0],
-				pts[a][1],
-				pts[a][2],
-				pts[c][0],
-				pts[c][1],
-				pts[c][2],
-				pts[d][0],
-				pts[d][1],
-				pts[d][2]
-			);
+		const uvs: number[] = [];
+
+		for (let qi = 0; qi < quads.length; qi++) {
+			const [a, b, c, d] = quads[qi];
+			const [uAxis, vAxis] = faceUVAxes[qi];
+			const uVals = [a, b, c, d].map((i) => pts[i][uAxis]);
+			const vVals = [a, b, c, d].map((i) => pts[i][vAxis]);
+			const uMin = Math.min(...uVals),
+				uRange = Math.max(...uVals) - uMin || 1;
+			const vMin = Math.min(...vVals),
+				vRange = Math.max(...vVals) - vMin || 1;
+			const uv = (i: number) => [(pts[i][uAxis] - uMin) / uRange, (pts[i][vAxis] - vMin) / vRange];
+			for (const i of [a, b, c]) {
+				pos.push(...pts[i]);
+				uvs.push(...uv(i));
+			}
+			for (const i of [a, c, d]) {
+				pos.push(...pts[i]);
+				uvs.push(...uv(i));
+			}
 		}
 
 		const geo = new THREE.BufferGeometry();
 		geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+		geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
 		geo.computeVertexNormals();
 		return geo;
 	}
 
 	const hullGeometry = makeHullGeometry();
+
+	const _texLoader = new THREE.TextureLoader();
+	function loadTex(prefix: string, suffix: string, srgb = false): THREE.Texture {
+		const tex = _texLoader.load(`/textures/${prefix}_1K-JPG_${suffix}.jpg`);
+		if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
+		return tex;
+	}
+	const _metalColor = loadTex('Metal047B', 'Color', true);
+	const _metalNormal = loadTex('Metal047B', 'NormalGL');
+	const _metalRoughness = loadTex('Metal047B', 'Roughness');
+	const _metalMetalness = loadTex('Metal047B', 'Metalness');
+
+	const hullMaterial = new THREE.MeshStandardMaterial({
+		color: '#CBFF70', // #556B2F hue normalised so max channel = 1 — tints without darkening
+		//color: '#ccffcc',
+		map: _metalColor,
+		normalMap: _metalNormal,
+		roughnessMap: _metalRoughness,
+		metalnessMap: _metalMetalness,
+		metalness: 1.0,
+		roughness: 1.0
+	});
+	const turretMaterial = hullMaterial;
+
+	const barrelMaterial = new THREE.MeshStandardMaterial({
+		map: loadTex('Metal055A', 'Color', true),
+		normalMap: loadTex('Metal055A', 'NormalGL'),
+		roughnessMap: loadTex('Metal055A', 'Roughness'),
+		metalnessMap: loadTex('Metal055A', 'Metalness'),
+		metalness: 1.0,
+		roughness: 1.0
+	});
 
 	const handleLightCreate = (ref: THREE.DirectionalLight) => {
 		lightRef = ref;
@@ -372,9 +412,10 @@
 		// spin visibly when slope blocks movement (speed=0 but key held).
 		const accelSpin = (upHeld ? 2 : downHeld ? -2 : 0) * ACCEL;
 		const spinDir = speed !== 0 ? Math.sign(speed) : Math.sign(accelSpin);
-		const spinSpeed = spinDir >= 0 ? Math.max(speed, accelSpin) : Math.min(speed, accelSpin);
-		wheelSpinLeft += (spinSpeed - angVel) * delta;
-		wheelSpinRight += (spinSpeed + angVel) * delta;
+		const spinSpeed =
+			spinDir >= 0 ? Math.max(speed * 3, accelSpin) : Math.min(speed * 3, accelSpin);
+		wheelSpinLeft += (spinSpeed - angVel * 3) * delta;
+		wheelSpinRight += (spinSpeed + angVel * 3) * delta;
 
 		// Turret and barrel
 		// Keyboard aim
@@ -528,7 +569,7 @@
 		<!-- Hull body: trapezoidal prism, front more sloped than back -->
 		<T.Mesh castShadow receiveShadow>
 			<T is={hullGeometry} attach="geometry" />
-			<T.MeshStandardMaterial color="#556B2F" />
+			<T is={hullMaterial} attach="material" />
 		</T.Mesh>
 
 		<!-- Turret group — rotates independently of hull -->
@@ -536,13 +577,13 @@
 			<!-- Turret — octagonal, slightly tapered -->
 			<T.Mesh position={[0, 1.29, -0.15]} rotation.y={Math.PI / 8} castShadow receiveShadow>
 				<T.CylinderGeometry args={[0.52, 0.65, 0.38, 16]} />
-				<T.MeshStandardMaterial color="#3d4a22" />
+				<T is={turretMaterial} attach="material" />
 			</T.Mesh>
 
 			<!-- Commander's cupola — rotates with turret, not with barrel elevation -->
 			<T.Mesh position={[0.2, 1.49, 0.1]} castShadow receiveShadow>
 				<T.CylinderGeometry args={[0.17, 0.21, 0.18, 16]} />
-				<T.MeshStandardMaterial color="#2f3a1a" />
+				<T is={turretMaterial} attach="material" />
 			</T.Mesh>
 
 			<!-- Barrel elevation group — pivots at turret front face (z≈-0.67) -->
@@ -550,12 +591,12 @@
 				<!-- Gun mantlet — masks the gap between barrel and turret -->
 				<T.Mesh rotation.x={Math.PI / 2} castShadow receiveShadow>
 					<T.CylinderGeometry args={[0.22, 0.22, 0.08, 32]} />
-					<T.MeshStandardMaterial color="#3d4a22" />
+					<T is={turretMaterial} attach="material" />
 				</T.Mesh>
 				<!-- Barrel — offset so muzzle stays at same world position -->
 				<T.Mesh position={[0, 0, -0.75]} rotation.x={Math.PI / 2} castShadow>
 					<T.CylinderGeometry args={[0.1, 0.1, 3, 16]} />
-					<T.MeshStandardMaterial color="#2a2a2a" />
+					<T is={barrelMaterial} attach="material" />
 				</T.Mesh>
 			</T.Group>
 		</T.Group>
