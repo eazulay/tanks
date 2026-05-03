@@ -69,8 +69,8 @@
 		pos.y += vel.y * delta;
 		pos.z += vel.z * delta;
 
-		// Disappeared out of view
-		if (pos.y < position.y - 15) {
+		// Out-of-bounds shells have no terrain-impact detection, so clean up by Y drop
+		if (!isInBounds(pos.x, pos.z) && pos.y < position.y - 15) {
 			onremove?.();
 			return;
 		}
