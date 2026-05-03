@@ -2,6 +2,8 @@
 	import { Canvas } from '@threlte/core';
 	import Scene from './Scene.svelte';
 
+	const RELOAD_TIME = 4000;
+
 	let restartKey = $state(0);
 	let locked = $state(false);
 	let chargeLevel = $state(0);
@@ -11,9 +13,11 @@
 	let chargeFullTime: number | null = null;
 	let spaceHeld = false;
 	let mouseHeld = false;
+	let reloadProgress = $state(1);
+	let reloadStart: number | null = null;
 
 	function startCharge() {
-		if (chargeStart === null) {
+		if (chargeStart === null && reloadProgress >= 1) {
 			chargeStart = performance.now();
 			chargeVisible = true;
 			chargeFull = false;
@@ -24,6 +28,8 @@
 	function tryFire() {
 		if (chargeVisible) {
 			window.dispatchEvent(new CustomEvent('tank-fire', { detail: { chargeLevel } }));
+			reloadStart = performance.now();
+			reloadProgress = 0;
 		}
 		resetCharge();
 	}
@@ -36,7 +42,7 @@
 		chargeFullTime = null;
 	}
 
-	// Charge bar update loop — runs every display frame via requestAnimationFrame
+	// Charge + reload bar update loop — runs every display frame via requestAnimationFrame
 	$effect(() => {
 		let rafId: number;
 		function tick(now: number) {
@@ -49,6 +55,10 @@
 				if (chargeFull && chargeFullTime !== null && now - chargeFullTime >= 500) {
 					resetCharge();
 				}
+			}
+			if (reloadStart !== null) {
+				reloadProgress = Math.min(1, (now - reloadStart) / RELOAD_TIME);
+				if (reloadProgress >= 1) reloadStart = null;
 			}
 			rafId = requestAnimationFrame(tick);
 		}
@@ -65,7 +75,11 @@
 			}
 		};
 		const onKeyDown = (e: KeyboardEvent) => {
-			if (e.code === 'KeyR') restartKey++;
+			if (e.code === 'KeyR') {
+				restartKey++;
+				reloadStart = null;
+				reloadProgress = 1;
+			}
 			if (e.code === 'Space' && !spaceHeld) {
 				e.preventDefault();
 				spaceHeld = true;
@@ -115,6 +129,14 @@
 	{#if chargeVisible}
 		<div class="charge-wrap">
 			<div class="charge-bar" class:full={chargeLevel >= 1} style="width: {chargeLevel * 100}%"></div>
+			<span class="charge-label">Velocity</span>
+		</div>
+	{/if}
+
+	{#if reloadProgress < 1}
+		<div class="reload-wrap">
+			<div class="reload-bar" style="width: {(1 - reloadProgress) * 100}%"></div>
+			<span class="reload-label">Reloading</span>
 		</div>
 	{/if}
 
@@ -164,7 +186,7 @@
 		left: 50%;
 		transform: translateX(-50%);
 		width: 220px;
-		height: 14px;
+		height: 18px;
 		background: rgba(0, 0, 0, 0.55);
 		border: 1px solid #888;
 		border-radius: 7px;
@@ -178,9 +200,60 @@
 		background: linear-gradient(to right, #4a9a2a, #c8c020);
 	}
 
+	.charge-label {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.6rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		color: #eee;
+		text-shadow: 0 0 4px #000, 0 0 2px #000;
+		text-transform: uppercase;
+	}
+
 	.charge-bar.full {
 		background: #e0c000;
 		animation: pulse 0.2s ease-in-out infinite alternate;
+	}
+
+	.reload-wrap {
+		position: absolute;
+		top: 1.2rem;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 220px;
+		height: 18px;
+		background: rgba(0, 0, 0, 0.55);
+		border: 1px solid #888;
+		border-radius: 7px;
+		overflow: hidden;
+		z-index: 20;
+		pointer-events: none;
+	}
+
+	.reload-bar {
+		position: absolute;
+		inset: 0;
+		right: auto;
+		height: 100%;
+		background: linear-gradient(to right, #8b2000, #c05000);
+	}
+
+	.reload-label {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.6rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		color: #eee;
+		text-shadow: 0 0 4px #000, 0 0 2px #000;
+		text-transform: uppercase;
 	}
 
 	@keyframes pulse {
