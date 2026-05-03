@@ -76,6 +76,8 @@ requiredY = getTerrainHeight(cornerWx, cornerWz) + lz*sin(pitch) - lx*sin(roll)
 
 **Gravity / grounded physics:** `velocityY` accumulates gravity each frame. When `newY <= groundY`, the tank is clamped to `groundY` and `velocityY` reset to 0. Keyboard input and slope limits are gated on `velocityY === 0` (grounded last frame).
 
+**Water drag:** Detected when `getTerrainHeight(x, z) < 0` (terrain below sea level). Each physics object applies `vel *= pow(WATER_DRAG, delta)` per frame while `pos.y <= 0` in a water area, before gravity is added. Drag constants: shell `0.8`, explosion rocks `0.6`, tank `0.5` (caps wading speed to ~25% of normal via `speed *= pow(WATER_TANK_DRAG, delta)` inside the `if (speed !== 0)` block). The tank water check uses `tankPosition` (current frame) rather than the proposed new position.
+
 **Slope limits** (`Tank.svelte`): `MAX_SLOPE = tan(35°) ≈ 0.70`. Uphill steeper than MAX_SLOPE blocks movement (speed zeroed, position reverted). Overall slope steeper than MAX_SLOPE causes downhill sliding proportional to excess slope. Terrain max slope is ~45° given the vertex height constraint of ±5 per 5-unit cell.
 
 **Differential track steering:** Left and right tracks spin at different rates during turns:

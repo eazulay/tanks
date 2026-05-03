@@ -22,6 +22,7 @@
 	const FIREBALL_DURATION = 0.6;
 	const FIREBALL_MAX_RADIUS = 2.5;
 	const GRAVITY = 10;
+	const WATER_DRAG = 0.6; // fraction of velocity remaining after 1 s underwater
 	const ROCK_COUNT = 10;
 	const ROCK_MAX_TIME = 3.5;
 	const raisePerRock = craterDepth / ROCK_COUNT;
@@ -123,6 +124,16 @@
 			if (rock.done) continue;
 			allRocksDone = false;
 			const prevY = rock.prevY;
+			if (
+				isInBounds(rock.pos.x, rock.pos.z) &&
+				rock.pos.y <= 0 &&
+				getTerrainHeight(rock.pos.x, rock.pos.z) < 0
+			) {
+				const drag = Math.pow(WATER_DRAG, delta);
+				rock.vel.x *= drag;
+				rock.vel.y *= drag;
+				rock.vel.z *= drag;
+			}
 			rock.vel.y -= GRAVITY * delta;
 			rock.pos.x += rock.vel.x * delta;
 			rock.pos.y += rock.vel.y * delta;

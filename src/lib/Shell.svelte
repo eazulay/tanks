@@ -20,6 +20,7 @@
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
 
 	const GRAVITY = 10;
+	const WATER_DRAG = 0.8; // fraction of velocity remaining after 1 s underwater
 
 	const pos = position.clone();
 	const vel = velocity.clone();
@@ -57,6 +58,12 @@
 		}
 
 		// Physics
+		if (isInBounds(pos.x, pos.z) && pos.y <= 0 && getTerrainHeight(pos.x, pos.z) < 0) {
+			const drag = Math.pow(WATER_DRAG, delta);
+			vel.x *= drag;
+			vel.y *= drag;
+			vel.z *= drag;
+		}
 		vel.y -= GRAVITY * delta;
 		pos.x += vel.x * delta;
 		pos.y += vel.y * delta;
@@ -96,7 +103,9 @@
 </script>
 
 <T.Group
-	oncreate={(ref) => { groupRef = ref; }}
+	oncreate={(ref) => {
+		groupRef = ref;
+	}}
 	position={[position.x, position.y, position.z]}
 >
 	<T.Mesh castShadow>

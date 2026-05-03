@@ -21,6 +21,7 @@
 	const BARREL_MIN = -0.17; // ~-10°
 	const BARREL_MAX = 0.7; // ~+40°
 	const GRAVITY = 10;
+	const WATER_TANK_DRAG = 0.85; // extra drag when wading — caps top speed to ~25% of normal
 	const MOUSE_TURRET_SENS = 0.003; // rad per pixel
 	const MOUSE_BARREL_SENS = 0.002;
 	const SHELL_MIN_SPEED = 20;
@@ -354,6 +355,8 @@
 			newX -= Math.sin(tankHeading) * speed * delta;
 			newZ -= Math.cos(tankHeading) * speed * delta;
 			speed *= Math.pow(0.996 ** 60, delta); // frame-rate-independent friction
+			if (getTerrainHeight(tankPosition.x, tankPosition.z) < 0)
+				speed *= Math.pow(WATER_TANK_DRAG, delta);
 			if (Math.abs(speed) < 0.01) speed = 0;
 		}
 
