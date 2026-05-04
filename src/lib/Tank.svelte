@@ -3,6 +3,7 @@
 	import { T, useTask } from '@threlte/core';
 	import { getContext, onMount } from 'svelte';
 	import type { Object3D } from 'three';
+	import Splash from './Splash.svelte';
 
 	let {
 		controlled = false,
@@ -26,6 +27,9 @@
 	const MOUSE_BARREL_SENS = 0.002;
 	const SHELL_MIN_SPEED = 20;
 	const SHELL_MAX_SPEED = 50;
+
+	const WAX_WAKE_SPACING = 4; // world units traveled between wake emissions
+	const MIN_WAKE_SPEED = 0.3; // minimum tank speed to emit wakes
 
 	const CAMERA_HEIGHT = 4;
 	const CAMERA_BEHIND = 10;
@@ -59,6 +63,10 @@
 	let cameraPosition = $state(new THREE.Vector3(0, CAMERA_HEIGHT, CAMERA_BEHIND));
 	let cameraRef: Object3D | null = null;
 	let lightRef: THREE.DirectionalLight | null = null;
+
+	let wakes = $state<{ id: number; x: number; z: number }[]>([]);
+	let nextWakeId = 0;
+	let wakeTimer = 0;
 
 	const LIGHT_OFFSET = new THREE.Vector3(-50, 50, 30);
 	const SHADOW_HALF = 50;
@@ -312,6 +320,8 @@
 		turretHeading = 0;
 		barrelElevation = 0;
 		braking = false;
+		wakes = [];
+		wakeTimer = 0;
 		snapTankToTerrain(0, 0);
 		resetCamera();
 	}
@@ -472,6 +482,29 @@
 				lightRef.target.updateMatrixWorld();
 			}
 		}
+
+		// Wake splashes — emitted at front and rear while partially wading through water
+		const wading = getTerrainHeight(tankPosition.x, tankPosition.z) < 0 && tankPosition.y > -3.5;
+		if (wading && Math.abs(speed) > MIN_WAKE_SPEED) {
+			wakeTimer += Math.abs(speed) * delta;
+			if (wakeTimer >= WAX_WAKE_SPACING) {
+				wakeTimer = 0;
+				const sinH = Math.sin(tankHeading);
+				const cosH = Math.cos(tankHeading);
+				wakes.push({
+					id: nextWakeId++,
+					x: tankPosition.x - sinH * 1.5,
+					z: tankPosition.z - cosH * 1.5
+				});
+				wakes.push({
+					id: nextWakeId++,
+					x: tankPosition.x + sinH * 1.2,
+					z: tankPosition.z + cosH * 1.2
+				});
+			}
+		} else {
+			wakeTimer = 0;
+		}
 	});
 
 	const handleCameraCreate = (ref: Object3D) => {
@@ -605,3 +638,7 @@
 		</T.Group>
 	</T.Group>
 </T.Group>
+
+{#each wakes as wake (wake.id)}
+	<Splash x={wake.x} z={wake.z} onremove={() => (wakes = wakes.filter((w) => w.id !== wake.id))} />
+{/each}

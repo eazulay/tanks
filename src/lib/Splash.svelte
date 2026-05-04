@@ -33,7 +33,7 @@
 	{#if ring.opacity > 0}
 		<T.Mesh rotation.x={-Math.PI / 2} position={[x, 0.05, z]}>
 			<T.RingGeometry args={[ring.radius, ring.radius + 0.3, 64]} />
-			<T.MeshBasicMaterial color="#88bbcc" transparent opacity={ring.opacity} side={THREE.DoubleSide} />
+			<T.MeshBasicMaterial color="#ffffff" transparent opacity={ring.opacity} depthWrite={false} side={THREE.DoubleSide} />
 		</T.Mesh>
 	{/if}
 {/each}
