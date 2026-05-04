@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
 	import { T, useThrelte } from '@threlte/core';
-	import { setContext } from 'svelte';
+	import { setContext, onDestroy } from 'svelte';
 	import Tank from '$lib/Tank.svelte';
 	import Shell from '$lib/Shell.svelte';
 	import Explosion from '$lib/Explosion.svelte';
@@ -17,6 +17,8 @@
 	const N = GRID_SEGS + 1;
 	const MAX_STEP_HEIGHT = 3.2;
 	const BORDER_RAISE = 6.5;
+	const WATER_SIZE = WORLD_SIZE + 40; // water extends 20 units beyond terrain on each side
+	const WATER_SKIRT = 500; // depth of opaque skirt panels below the water perimeter
 
 	function generateHeights(): Float32Array {
 		const h = new Float32Array(N * N);
@@ -157,6 +159,22 @@
 		);
 	};
 
+	onDestroy(() => {
+		terrainGeo.dispose();
+		terrainMaterial.dispose();
+		[
+			grassColorMap,
+			grassNormalMap,
+			grassRoughnessMap,
+			sandColorMap,
+			sandNormalMap,
+			sandRoughnessMap,
+			snowColorMap,
+			snowNormalMap,
+			snowRoughnessMap
+		].forEach((t) => t.dispose());
+	});
+
 	let heights: Float32Array<ArrayBufferLike>;
 	let terrainGeo = $state(new THREE.PlaneGeometry());
 
@@ -258,6 +276,7 @@
 	let tankRef: { reset: () => void } | undefined;
 
 	function initGame() {
+		const prevGeo = terrainGeo;
 		heights = generateHeights();
 		// PlaneGeometry is in the XY plane; setting Z then rotating -90° around X
 		// maps those Z values to world Y (height).
@@ -290,6 +309,7 @@
 			colorsArr[i * 3 + 2] = b;
 		}
 		terrainGeo.setAttribute('color', new THREE.BufferAttribute(colorsArr, 3));
+		prevGeo?.dispose();
 		shells = [];
 		explosions = [];
 		tankRef?.reset();
@@ -310,9 +330,28 @@
 </T.Mesh>
 
 <!-- Water surface at y=0 — DoubleSide so it renders as a blue ceiling when camera is below -->
-<T.Mesh rotation.x={-Math.PI / 2} position.y={0}>
-	<T.PlaneGeometry args={[WORLD_SIZE, WORLD_SIZE]} />
-	<T.MeshStandardMaterial color="#1a6fa8" transparent opacity={0.7} side={THREE.DoubleSide} />
+<T.Mesh rotation.x={-Math.PI / 2}>
+	<T.PlaneGeometry args={[WATER_SIZE, WATER_SIZE]} />
+	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.6} side={THREE.DoubleSide} />
+</T.Mesh>
+
+<!-- Skirts hanging below the water perimeter — same transparency as water surface so the
+     blend with the background is identical whether the camera sees water or skirt -->
+<T.Mesh position={[0, -WATER_SKIRT / 2, -WATER_SIZE / 2]}>
+	<T.PlaneGeometry args={[WATER_SIZE, WATER_SKIRT]} />
+	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.6} side={THREE.DoubleSide} />
+</T.Mesh>
+<T.Mesh position={[0, -WATER_SKIRT / 2, WATER_SIZE / 2]}>
+	<T.PlaneGeometry args={[WATER_SIZE, WATER_SKIRT]} />
+	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.6} side={THREE.DoubleSide} />
+</T.Mesh>
+<T.Mesh position={[-WATER_SIZE / 2, -WATER_SKIRT / 2, 0]} rotation.y={Math.PI / 2}>
+	<T.PlaneGeometry args={[WATER_SIZE, WATER_SKIRT]} />
+	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.6} side={THREE.DoubleSide} />
+</T.Mesh>
+<T.Mesh position={[WATER_SIZE / 2, -WATER_SKIRT / 2, 0]} rotation.y={Math.PI / 2}>
+	<T.PlaneGeometry args={[WATER_SIZE, WATER_SKIRT]} />
+	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.6} side={THREE.DoubleSide} />
 </T.Mesh>
 
 <Tank controlled chaseCamera bind:this={tankRef} onfire={handleFire} />

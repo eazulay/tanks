@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
 	import { T, useTask } from '@threlte/core';
-	import { getContext, onMount } from 'svelte';
+	import { getContext, onMount, onDestroy } from 'svelte';
 	import type { Object3D } from 'three';
 	import Splash from './Splash.svelte';
 
@@ -181,6 +181,20 @@
 		metalnessMap: loadTex('Metal055A', 'Metalness'),
 		metalness: 1.0,
 		roughness: 1.0
+	});
+
+	onDestroy(() => {
+		hullGeometry.dispose();
+		hullMaterial.map?.dispose();
+		hullMaterial.normalMap?.dispose();
+		hullMaterial.roughnessMap?.dispose();
+		hullMaterial.metalnessMap?.dispose();
+		hullMaterial.dispose();
+		barrelMaterial.map?.dispose();
+		barrelMaterial.normalMap?.dispose();
+		barrelMaterial.roughnessMap?.dispose();
+		barrelMaterial.metalnessMap?.dispose();
+		barrelMaterial.dispose();
 	});
 
 	const handleLightCreate = (ref: THREE.DirectionalLight) => {

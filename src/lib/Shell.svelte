@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
 	import { T, useTask } from '@threlte/core';
-	import { getContext } from 'svelte';
+	import { getContext, onDestroy } from 'svelte';
 	import Splash from './Splash.svelte';
 
 	let {
@@ -25,6 +25,20 @@
 	const pos = position.clone();
 	const vel = velocity.clone();
 	let prevY = pos.y;
+
+	const shellGeo = new THREE.CylinderGeometry(0.035, 0.055, 0.38, 8);
+	const shellMat = new THREE.MeshStandardMaterial({
+		color: '#c87830',
+		metalness: 0.8,
+		roughness: 0.3,
+		emissive: '#7a3a08',
+		emissiveIntensity: 0.4
+	});
+
+	onDestroy(() => {
+		shellGeo.dispose();
+		shellMat.dispose();
+	});
 
 	const _up = new THREE.Vector3(0, 1, 0);
 	const _dir = new THREE.Vector3();
@@ -108,16 +122,7 @@
 	}}
 	position={[position.x, position.y, position.z]}
 >
-	<T.Mesh castShadow>
-		<T.CylinderGeometry args={[0.035, 0.055, 0.38, 8]} />
-		<T.MeshStandardMaterial
-			color="#c87830"
-			metalness={0.8}
-			roughness={0.3}
-			emissive="#7a3a08"
-			emissiveIntensity={0.4}
-		/>
-	</T.Mesh>
+	<T.Mesh castShadow geometry={shellGeo} material={shellMat} />
 </T.Group>
 
 {#each splashes as s (s.id)}
