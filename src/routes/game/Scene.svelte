@@ -218,6 +218,12 @@
 	const treeTrunks: { x: number; z: number; r: number }[] = [];
 	setContext('treeTrunks', treeTrunks);
 
+	// Shell position tracker — Shell writes its live position here; Tank camera reads it when zoomed.
+	// Scene nulls it out and dispatches 'shell-sequence-done' when the full sequence ends.
+	const shellFollow: { pos: THREE.Vector3 | null } = { pos: null };
+	setContext('shellFollow', shellFollow);
+	let trackedExplosionId: number | null = null;
+
 	const CRATER_DEPTH = 0.75;
 
 	function deformTerrain(wx: number, wz: number) {
@@ -267,16 +273,25 @@
 		id: number;
 		position: THREE.Vector3;
 		velocity: THREE.Vector3;
+		tracked: boolean; // true only for the player-controlled tank's shells
 	}
 	let shells = $state<ShellInstance[]>([]);
 	let nextShellId = 0;
 
-	function handleFire(position: THREE.Vector3, velocity: THREE.Vector3) {
-		shells.push({ id: nextShellId++, position, velocity });
+	function handlePlayerFire(position: THREE.Vector3, velocity: THREE.Vector3) {
+		const id = nextShellId++;
+		shells.push({ id, position, velocity, tracked: true });
+		trackedExplosionId = null;
 	}
 
 	function removeShell(id: number) {
+		const wasTracked = shells.find((s) => s.id === id)?.tracked ?? false;
 		shells = shells.filter((s) => s.id !== id);
+		// OOB exit: shell left bounds with no explosion — end sequence now
+		if (wasTracked && trackedExplosionId === null) {
+			shellFollow.pos = null;
+			window.dispatchEvent(new CustomEvent('shell-sequence-done'));
+		}
 	}
 
 	interface ExplodeInstance {
@@ -288,7 +303,7 @@
 
 	const IGNITION_RADIUS = 10;
 
-	function handleImpact(position: THREE.Vector3) {
+	function handleImpact(position: THREE.Vector3, tracked: boolean) {
 		deformTerrain(position.x, position.z);
 		const now = Date.now();
 		for (const t of trees) {
@@ -297,11 +312,22 @@
 			const dz = t.z - position.z;
 			if (dx * dx + dz * dz < IGNITION_RADIUS * IGNITION_RADIUS) t.burntAt = now;
 		}
-		explosions.push({ id: nextExplodeId++, position });
+		const id = nextExplodeId++;
+		explosions.push({ id, position });
+		if (tracked) {
+			trackedExplosionId = id;
+			// Lock shell-follow target at the impact point so camera holds on it during the explosion
+			shellFollow.pos = position.clone();
+		}
 	}
 
 	function removeExplosion(id: number) {
 		explosions = explosions.filter((e) => e.id !== id);
+		if (id === trackedExplosionId) {
+			trackedExplosionId = null;
+			shellFollow.pos = null;
+			window.dispatchEvent(new CustomEvent('shell-sequence-done'));
+		}
 	}
 
 	let spawnPositions = $state<{ x: number; z: number; heading: number }[]>([]);
@@ -441,7 +467,7 @@
 	spawnZ={spawnPositions[0]?.z ?? 0}
 	spawnHeading={spawnPositions[0]?.heading ?? 0}
 	bind:this={tankRef}
-	onfire={handleFire}
+	onfire={handlePlayerFire}
 />
 
 {#each shells as s (s.id)}
@@ -449,7 +475,7 @@
 		position={s.position}
 		velocity={s.velocity}
 		onremove={() => removeShell(s.id)}
-		onimpact={handleImpact}
+		onimpact={(pos) => handleImpact(pos, s.tracked)}
 	/>
 {/each}
 

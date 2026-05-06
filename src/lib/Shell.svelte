@@ -18,6 +18,7 @@
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
+	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
 
 	const GRAVITY = 10;
 	const WATER_DRAG = 0.8; // fraction of velocity remaining after 1 s underwater
@@ -25,6 +26,12 @@
 	const pos = position.clone();
 	const vel = velocity.clone();
 	let prevY = pos.y;
+
+	// Share our live position vector with the shell tracker — Tank's camera reads it when zoomed.
+	// pos is updated in-place each frame, so shellFollow.pos stays in sync automatically.
+	// Scene will overwrite this reference with the impact-point clone when the shell lands,
+	// and null it out when the full sequence (explosion) completes.
+	if (shellFollow) shellFollow.pos = pos;
 
 	const shellGeo = new THREE.CylinderGeometry(0.035, 0.055, 0.38, 8);
 	const shellMat = new THREE.MeshStandardMaterial({

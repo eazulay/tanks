@@ -16,6 +16,7 @@
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const treeTrunks = getContext<{ x: number; z: number; r: number }[]>('treeTrunks');
+	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
 
 	// --- Constants ---
 	const ACCEL = 4;
@@ -75,6 +76,7 @@
 	let lightRef: THREE.DirectionalLight | null = null;
 	let zoomed = $state(false);
 	let currentFov = NORMAL_FOV;
+	let zoomedAtFireTime = false; // was zoom already on when the last shot was fired?
 
 	let wakes = $state<{ id: number; x: number; z: number }[]>([]);
 	let nextWakeId = 0;
@@ -267,19 +269,25 @@
 		const onTankFire = (e: Event) => {
 			fire((e as CustomEvent<{ chargeLevel: number }>).detail.chargeLevel);
 		};
+		const onShellSequenceDone = () => {
+			if (!zoomedAtFireTime) zoomed = false;
+		};
 		window.addEventListener('keydown', onKeyDown);
 		window.addEventListener('keyup', onKeyUp);
 		window.addEventListener('mousemove', onMouseMove);
 		window.addEventListener('tank-fire', onTankFire);
+		window.addEventListener('shell-sequence-done', onShellSequenceDone);
 		return () => {
 			window.removeEventListener('keydown', onKeyDown);
 			window.removeEventListener('keyup', onKeyUp);
 			window.removeEventListener('mousemove', onMouseMove);
 			window.removeEventListener('tank-fire', onTankFire);
+			window.removeEventListener('shell-sequence-done', onShellSequenceDone);
 		};
 	});
 
 	function fire(chargeLevel: number) {
+		zoomedAtFireTime = zoomed;
 		// Muzzle world position: tip of barrel at z=-2.25 in elevation-group local space
 		const muzzle = new THREE.Vector3(0, 0, -2.25);
 		muzzle.applyAxisAngle(_X_AXIS, barrelElevation);
@@ -512,11 +520,17 @@
 				cameraPosition.y + (targetCamY - cameraPosition.y) * t,
 				cameraPosition.z + (targetCamZ - cameraPosition.z) * t
 			);
-			cameraRef?.lookAt(
-				tankPosition.x,
-				tankPosition.y + CAMERA_HEIGHT * 0.5 + elevFraction * CAMERA_BEHIND * 0.4,
-				tankPosition.z
-			);
+			// While zoomed and a shell is in flight, track the shell; otherwise look at tank
+			const shellPos = shellFollow?.pos;
+			if (zoomed && shellPos !== null) {
+				cameraRef?.lookAt(shellPos.x, shellPos.y, shellPos.z);
+			} else {
+				cameraRef?.lookAt(
+					tankPosition.x,
+					tankPosition.y + CAMERA_HEIGHT * 0.5 + elevFraction * CAMERA_BEHIND * 0.4,
+					tankPosition.z
+				);
+			}
 
 			// Zoom — smoothly narrow/widen the FOV
 			const targetFov = zoomed ? ZOOM_FOV : NORMAL_FOV;
