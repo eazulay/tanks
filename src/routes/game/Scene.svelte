@@ -7,6 +7,8 @@
 	import Explosion from '$lib/Explosion.svelte';
 	import Tree from '$lib/Tree.svelte';
 
+	let { opponentCount = 1 }: { opponentCount?: number } = $props();
+
 	const { scene } = useThrelte();
 	scene.background = new THREE.Color('#87CEEB');
 
@@ -20,9 +22,14 @@
 	const WATER_SKIRT = 500; // depth of opaque skirt panels below the water perimeter
 
 	// Tank spawning — circle at 80% of terrain half-radius, evenly spaced by count
-	const TANK_COUNT = 1;
+	// Index 0 = player, indices 1..opponentCount = opponents (stationary until AI is added)
+	const TANK_COUNT = opponentCount + 1;
 	const SPAWN_RADIUS = (WORLD_SIZE / 2) * 0.8; // 300 units
 	const SPAWN_CLEAR = 40; // no trees within this distance of a spawn point
+
+	// Hull tint colours — normalised so the brightest channel = 255, preserving texture brightness.
+	// Index 0 = player (olive), 1–3 = opponents (sand, steel blue, rust).
+	const TANK_COLORS = ['#CBFF70', '#FFD060', '#80CCFF', '#FF8055'];
 
 	function generateHeights(): Float32Array {
 		const h = new Float32Array(N * N);
@@ -217,6 +224,12 @@
 	// Stable array of trunk colliders, updated in initGame(); Tank reads this every frame.
 	const treeTrunks: { x: number; z: number; r: number }[] = [];
 	setContext('treeTrunks', treeTrunks);
+
+	// Stable array of live tank bodies, one entry per Tank instance.
+	// Each Tank pushes its own entry on mount and keeps it updated every physics frame.
+	// pushVx/pushVz accumulate impulses written by colliding tanks; the owner applies and decays them.
+	const tankBodies: { x: number; z: number; pushVx: number; pushVz: number }[] = [];
+	setContext('tankBodies', tankBodies);
 
 	// Shell position tracker — Shell writes its live position here; Tank camera reads it when zoomed.
 	// Scene nulls it out and dispatches 'shell-sequence-done' when the full sequence ends.
@@ -463,12 +476,22 @@
 <Tank
 	controlled
 	chaseCamera
+	tankColor={TANK_COLORS[0]}
 	spawnX={spawnPositions[0]?.x ?? 0}
 	spawnZ={spawnPositions[0]?.z ?? 0}
 	spawnHeading={spawnPositions[0]?.heading ?? 0}
 	bind:this={tankRef}
 	onfire={handlePlayerFire}
 />
+
+{#each spawnPositions.slice(1) as sp, i (i)}
+	<Tank
+		tankColor={TANK_COLORS[i + 1] ?? TANK_COLORS[TANK_COLORS.length - 1]}
+		spawnX={sp.x}
+		spawnZ={sp.z}
+		spawnHeading={sp.heading}
+	/>
+{/each}
 
 {#each shells as s (s.id)}
 	<Shell

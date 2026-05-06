@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { Canvas } from '@threlte/core';
 	import Scene from './Scene.svelte';
+	import { page } from '$app/state';
+
+	const opponentCount = Math.min(3, Math.max(1, parseInt(page.url.searchParams.get('opponents') ?? '1', 10)));
 
 	const RELOAD_TIME = 4000;
 
@@ -124,7 +127,7 @@
 <div class="game-container">
 	<Canvas shadows>
 		{#key restartKey}
-			<Scene />
+			<Scene {opponentCount} />
 		{/key}
 	</Canvas>
 

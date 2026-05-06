@@ -11,12 +11,18 @@
 		spawnX = 0,
 		spawnZ = 0,
 		spawnHeading = 0,
+		tankColor = '#CBFF70',
 		onfire = undefined as ((position: THREE.Vector3, velocity: THREE.Vector3) => void) | undefined
 	} = $props();
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const treeTrunks = getContext<{ x: number; z: number; r: number }[]>('treeTrunks');
+	const tankBodies = getContext<{ x: number; z: number; pushVx: number; pushVz: number }[]>('tankBodies');
 	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
+
+	// Register this tank's body; other tanks write impulses here, we apply + decay them each frame.
+	const ownBody = { x: spawnX, z: spawnZ, pushVx: 0, pushVz: 0 };
+	tankBodies?.push(ownBody);
 
 	// --- Constants ---
 	const ACCEL = 4;
@@ -45,6 +51,8 @@
 	const ZOOM_AIM_FACTOR = 0.2;
 
 	const TANK_RADIUS = 1.4; // collision radius for trunk hit detection
+	const COLLISION_RESTITUTION = 0.3; // 0 = perfectly plastic, 1 = perfectly elastic
+	const PUSH_DECAY = 0.1; // fraction of push velocity remaining after 1 second
 
 	// Track contact corners in local space: (±TRACK_W, 0, ±TRACK_L)
 	const TRACK_W = 1.1;
@@ -177,8 +185,7 @@
 	const _metalMetalness = loadTex('Metal047B', 'Metalness');
 
 	const hullMaterial = new THREE.MeshStandardMaterial({
-		color: '#CBFF70', // #556B2F hue normalised so max channel = 1 — tints without darkening
-		//color: '#ccffcc',
+		color: tankColor,
 		map: _metalColor,
 		normalMap: _metalNormal,
 		roughnessMap: _metalRoughness,
@@ -198,6 +205,8 @@
 	});
 
 	onDestroy(() => {
+		const idx = tankBodies?.indexOf(ownBody) ?? -1;
+		if (idx !== -1) tankBodies!.splice(idx, 1);
 		hullGeometry.dispose();
 		hullMaterial.map?.dispose();
 		hullMaterial.normalMap?.dispose();
@@ -406,6 +415,12 @@
 			if (Math.abs(speed) < 0.01) speed = 0;
 		}
 
+		// External push velocity (impulse received from other tanks) — apply then decay
+		newX += ownBody.pushVx * delta;
+		newZ += ownBody.pushVz * delta;
+		ownBody.pushVx *= Math.pow(PUSH_DECAY, delta);
+		ownBody.pushVz *= Math.pow(PUSH_DECAY, delta);
+
 		// Terrain slope at proposed position — used for slope limiting and pitch/roll
 		const eps = 0.5;
 		const dhdx =
@@ -454,6 +469,41 @@
 			}
 		}
 
+		// Tank-tank collisions — momentum exchange via impulse written to the other body's push buffer.
+		// n points from the other tank (B) toward this tank (A).
+		// vDotN < 0 means A is moving toward B; we transfer momentum and reduce A's speed.
+		if (tankBodies) {
+			const minTankDist = TANK_RADIUS * 2;
+			const fwdX = -Math.sin(tankHeading);
+			const fwdZ = -Math.cos(tankHeading);
+			for (const body of tankBodies) {
+				if (body === ownBody) continue;
+				const dx = newX - body.x;
+				const dz = newZ - body.z;
+				const distSq = dx * dx + dz * dz;
+				if (distSq < minTankDist * minTankDist) {
+					const dist = Math.sqrt(distSq) || 0.001;
+					const nx = dx / dist; // unit normal B→A
+					const nz = dz / dist;
+					// Resolve overlap — push A out to the contact boundary
+					newX = body.x + nx * minTankDist;
+					newZ = body.z + nz * minTankDist;
+					// Velocity component of A along normal (negative = A moving toward B)
+					const fwdDotN = fwdX * nx + fwdZ * nz;
+					const vDotN = speed * fwdDotN;
+					if (vDotN < 0) {
+						// Impulse magnitude transferred to B (equal-mass collision formula)
+						const impulse = ((1 + COLLISION_RESTITUTION) / 2) * (-vDotN);
+						// Push B in the direction A is moving (−n = toward B from A)
+						body.pushVx -= nx * impulse;
+						body.pushVz -= nz * impulse;
+						// Reduce A's speed by the projected component that was transferred
+						speed -= ((1 + COLLISION_RESTITUTION) / 2) * vDotN * fwdDotN;
+					}
+				}
+			}
+		}
+
 		// Vertical physics — gravity, clamped at terrain (no bounce)
 		velocityY -= GRAVITY * delta;
 		const newY = tankPosition.y + velocityY * delta;
@@ -465,6 +515,8 @@
 		} else {
 			tankPosition = new THREE.Vector3(newX, newY, newZ);
 		}
+		ownBody.x = tankPosition.x;
+		ownBody.z = tankPosition.z;
 
 		// Pitch and roll (only while grounded, reuse slope computed above)
 		if (grounded) {

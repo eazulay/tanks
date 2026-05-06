@@ -1,10 +1,30 @@
+<script lang="ts">
+	let opponents = $state(1);
+</script>
+
 <main>
 	<div class="content">
 		<h1>Tank Royale</h1>
 		<p class="tagline">
-			Command your tank across randomly generated terrain. Outmaneuver the enemy, master the slopes, and be the last one standing.
+			Command your tank across randomly generated terrain. Outmaneuver the enemy, master the slopes,
+			and be the last one standing.
 		</p>
-		<a href="/game/" class="start-btn">Start Game</a>
+
+		<div class="settings">
+			<div class="setting-group">
+				<span class="setting-label">Opponents</span>
+				<div class="radio-group">
+					{#each [1, 2, 3] as n}
+						<label class="radio-chip" class:selected={opponents === n}>
+							<input type="radio" name="opponents" value={n} bind:group={opponents} />
+							{n}
+						</label>
+					{/each}
+				</div>
+			</div>
+		</div>
+
+		<a href="/game?opponents={opponents}" class="start-btn">Start Game</a>
 	</div>
 </main>
 
@@ -45,6 +65,62 @@
 		color: #a8b89a;
 		line-height: 1.65;
 		margin: 0 0 2.4rem;
+	}
+
+	.settings {
+		margin-bottom: 2rem;
+	}
+
+	.setting-label {
+		display: block;
+		font-family: 'Bebas Neue', sans-serif;
+		font-size: 0.85rem;
+		letter-spacing: 0.18em;
+		color: #7a8a6a;
+		margin-bottom: 0.65rem;
+	}
+
+	.radio-group {
+		display: flex;
+		gap: 0.5rem;
+		justify-content: center;
+	}
+
+	.radio-chip {
+		position: relative;
+		cursor: pointer;
+		font-family: 'Bebas Neue', sans-serif;
+		font-size: 1.35rem;
+		letter-spacing: 0.1em;
+		color: #7a8a6a;
+		background: rgba(15, 22, 8, 0.7);
+		border: 1px solid #2e3e20;
+		border-radius: 4px;
+		padding: 0.3em 1.2em;
+		transition:
+			background 0.15s,
+			color 0.15s,
+			border-color 0.15s;
+		user-select: none;
+	}
+
+	.radio-chip:hover {
+		border-color: #5a6a4a;
+		color: #a8b89a;
+	}
+
+	.radio-chip.selected {
+		background: #d4a832;
+		color: #0a0f05;
+		border-color: #d4a832;
+	}
+
+	.radio-chip input {
+		position: absolute;
+		opacity: 0;
+		pointer-events: none;
+		width: 0;
+		height: 0;
 	}
 
 	.start-btn {
