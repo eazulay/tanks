@@ -5,22 +5,25 @@
 
 	const opponentCount = Math.min(3, Math.max(1, parseInt(page.url.searchParams.get('opponents') ?? '1', 10)));
 
-	const RELOAD_TIME = 4000;
+	const RELOAD_TIME = 3000;
+	const FIRE_FADE_DURATION = 1000;
 
 	let restartKey = $state(0);
 	let locked = $state(false);
 	let chargeLevel = $state(0);
 	let chargeVisible = $state(false);
+	let chargeOpacity = $state(1);
 	let chargeStart: number | null = null;
 	let chargeFull = false;
 	let chargeFullTime: number | null = null;
+	let fadeStart = $state<number | null>(null);
 	let spaceHeld = false;
 	let mouseHeld = false;
 	let reloadProgress = $state(1);
-	let reloadStart: number | null = null;
+	let reloadStart = $state<number | null>(null);
 
 	function startCharge() {
-		if (chargeStart === null && reloadProgress >= 1) {
+		if (chargeStart === null && fadeStart === null && reloadProgress >= 1) {
 			chargeStart = performance.now();
 			chargeVisible = true;
 			chargeFull = false;
@@ -29,27 +32,42 @@
 	}
 
 	function tryFire() {
-		if (chargeVisible) {
+		if (chargeVisible && fadeStart === null) {
 			window.dispatchEvent(new CustomEvent('tank-fire', { detail: { chargeLevel } }));
-			reloadStart = performance.now();
-			reloadProgress = 0;
+			chargeStart = null;
+			chargeFull = false;
+			chargeFullTime = null;
+			fadeStart = performance.now();
+		} else if (!chargeVisible) {
+			resetCharge();
 		}
-		resetCharge();
 	}
 
 	function resetCharge() {
 		chargeStart = null;
 		chargeLevel = 0;
 		chargeVisible = false;
+		chargeOpacity = 1;
 		chargeFull = false;
 		chargeFullTime = null;
+		fadeStart = null;
 	}
 
 	// Charge + reload bar update loop — runs every display frame via requestAnimationFrame
 	$effect(() => {
 		let rafId: number;
 		function tick(now: number) {
-			if (chargeStart !== null) {
+			if (fadeStart !== null) {
+				const elapsed = now - fadeStart;
+				chargeOpacity = Math.max(0, 1 - elapsed / FIRE_FADE_DURATION);
+				if (elapsed >= FIRE_FADE_DURATION) {
+					chargeVisible = false;
+					chargeOpacity = 1;
+					fadeStart = null;
+					reloadStart = now;
+					reloadProgress = 0;
+				}
+			} else if (chargeStart !== null) {
 				chargeLevel = Math.min(1, (now - chargeStart) / 2000);
 				if (chargeLevel >= 1 && !chargeFull) {
 					chargeFull = true;
@@ -80,6 +98,7 @@
 		const onKeyDown = (e: KeyboardEvent) => {
 			if (e.code === 'KeyR') {
 				restartKey++;
+				resetCharge();
 				reloadStart = null;
 				reloadProgress = 1;
 			}
@@ -132,13 +151,13 @@
 	</Canvas>
 
 	{#if chargeVisible}
-		<div class="charge-wrap">
-			<div class="charge-bar" class:full={chargeLevel >= 1} style="width: {chargeLevel * 100}%"></div>
+		<div class="charge-wrap" style="opacity: {chargeOpacity}">
+			<div class="charge-bar" class:full={chargeLevel >= 1 && fadeStart === null} style="width: {chargeLevel * 100}%"></div>
 			<span class="charge-label">Velocity</span>
 		</div>
 	{/if}
 
-	{#if reloadProgress < 1}
+	{#if reloadStart !== null}
 		<div class="reload-wrap">
 			<div class="reload-bar" style="width: {(1 - reloadProgress) * 100}%"></div>
 			<span class="reload-label">Reloading</span>
