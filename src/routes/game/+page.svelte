@@ -123,7 +123,9 @@
 
 <div class="game-container">
 	<Canvas shadows>
-		<Scene {restartKey} />
+		{#key restartKey}
+			<Scene />
+		{/key}
 	</Canvas>
 
 	{#if chargeVisible}
@@ -143,8 +145,8 @@
 	{#if locked}
 		<div class="overlay">
 			<p class="hint">
-				WASD · drive &nbsp;|&nbsp; X · stop &nbsp;|&nbsp; Mouse / arrows · aim &nbsp;|&nbsp; Hold LMB
-				/ Space · charge, release · fire &nbsp;|&nbsp; Esc · release mouse
+				WASD · drive &nbsp;|&nbsp; X · stop &nbsp;|&nbsp; Mouse / arrows · aim &nbsp;|&nbsp; Z · zoom
+				&nbsp;|&nbsp; Hold LMB / Space · charge, release · fire &nbsp;|&nbsp; Esc · release mouse
 			</p>
 		</div>
 	{:else}
@@ -155,6 +157,7 @@
 						<li>WASD · drive</li>
 						<li>X · stop</li>
 						<li>Mouse / arrows · aim</li>
+						<li>Z · zoom (4× finer aim)</li>
 						<li>Hold LMB / Space · charge, release · fire</li>
 						<li>Esc · release mouse</li>
 					</ul>

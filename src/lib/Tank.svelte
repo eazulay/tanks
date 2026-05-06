@@ -8,10 +8,14 @@
 	let {
 		controlled = false,
 		chaseCamera = false,
+		spawnX = 0,
+		spawnZ = 0,
+		spawnHeading = 0,
 		onfire = undefined as ((position: THREE.Vector3, velocity: THREE.Vector3) => void) | undefined
 	} = $props();
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
+	const treeTrunks = getContext<{ x: number; z: number; r: number }[]>('treeTrunks');
 
 	// --- Constants ---
 	const ACCEL = 4;
@@ -20,13 +24,13 @@
 	const TURRET_SPEED = 1.2; // radians per second
 	const BARREL_SPEED = 0.8; // radians per second
 	const BARREL_MIN = -0.17; // ~-10°
-	const BARREL_MAX = 0.7; // ~+40°
+	const BARREL_MAX = 0.875; // ~+50°
 	const GRAVITY = 10;
 	const WATER_TANK_DRAG = 0.85; // extra drag when wading — caps top speed to ~25% of normal
 	const MOUSE_TURRET_SENS = 0.003; // rad per pixel
 	const MOUSE_BARREL_SENS = 0.002;
-	const SHELL_MIN_SPEED = 20;
-	const SHELL_MAX_SPEED = 50;
+	const SHELL_MIN_SPEED = 25;
+	const SHELL_MAX_SPEED = 70;
 
 	const WAX_WAKE_SPACING = 4; // world units traveled between wake emissions
 	const MIN_WAKE_SPEED = 0.3; // minimum tank speed to emit wakes
@@ -34,6 +38,12 @@
 	const CAMERA_HEIGHT = 4;
 	const CAMERA_BEHIND = 10;
 	const CHASE_LERP = 3;
+	const NORMAL_FOV = 50;
+	const ZOOM_FOV = 10;
+	const ZOOM_FOV_LERP = 8;
+	const ZOOM_AIM_FACTOR = 0.2;
+
+	const TANK_RADIUS = 1.4; // collision radius for trunk hit detection
 
 	// Track contact corners in local space: (±TRACK_W, 0, ±TRACK_L)
 	const TRACK_W = 1.1;
@@ -63,6 +73,8 @@
 	let cameraPosition = $state(new THREE.Vector3(0, CAMERA_HEIGHT, CAMERA_BEHIND));
 	let cameraRef: Object3D | null = null;
 	let lightRef: THREE.DirectionalLight | null = null;
+	let zoomed = $state(false);
+	let currentFov = NORMAL_FOV;
 
 	let wakes = $state<{ id: number; x: number; z: number }[]>([]);
 	let nextWakeId = 0;
@@ -234,6 +246,7 @@
 			if (e.code === 'ArrowUp') barrelUpHeld = true;
 			if (e.code === 'ArrowDown') barrelDownHeld = true;
 			if (e.code === 'KeyX') braking = true;
+			if (e.code === 'KeyZ') zoomed = !zoomed;
 		};
 		const onKeyUp = (e: KeyboardEvent) => {
 			if (e.code === 'KeyW') upHeld = false;
@@ -323,10 +336,10 @@
 		cameraPosition = new THREE.Vector3(camX, camY, camZ);
 	}
 
-	export function reset() {
+	export function reset(sx = 0, sz = 0, sh = 0) {
 		speed = 0;
 		velocityY = 0;
-		tankHeading = 0;
+		tankHeading = sh;
 		tankPitch = 0;
 		tankRoll = 0;
 		wheelSpinLeft = 0;
@@ -336,13 +349,14 @@
 		braking = false;
 		wakes = [];
 		wakeTimer = 0;
-		snapTankToTerrain(0, 0);
+		snapTankToTerrain(sx, sz);
 		resetCamera();
 	}
 
 	// Snap to terrain on first mount (initGame runs before Tank mounts, so heights are ready)
 	onMount(() => {
-		snapTankToTerrain(0, 0);
+		tankHeading = spawnHeading;
+		snapTankToTerrain(spawnX, spawnZ);
 		resetCamera();
 	});
 
@@ -415,6 +429,23 @@
 			}
 		}
 
+		// Tree trunk collisions — push tank out and cancel speed if driving into trunk
+		for (const trunk of treeTrunks) {
+			const dx = newX - trunk.x;
+			const dz = newZ - trunk.z;
+			const distSq = dx * dx + dz * dz;
+			const minDist = TANK_RADIUS + trunk.r;
+			if (distSq < minDist * minDist) {
+				const dist = Math.sqrt(distSq) || 0.001;
+				const nx = dx / dist;
+				const nz = dz / dist;
+				newX = trunk.x + nx * minDist;
+				newZ = trunk.z + nz * minDist;
+				// Cancel speed only when moving into the trunk (velocity dot normal < 0)
+				if ((-Math.sin(tankHeading) * nx + -Math.cos(tankHeading) * nz) * speed < 0) speed = 0;
+			}
+		}
+
 		// Vertical physics — gravity, clamped at terrain (no bounce)
 		velocityY -= GRAVITY * delta;
 		const newY = tankPosition.y + velocityY * delta;
@@ -445,20 +476,21 @@
 		wheelSpinRight += (spinSpeed + angVel * 3) * delta;
 
 		// Turret and barrel
+		const aimFactor = zoomed ? ZOOM_AIM_FACTOR : 1;
 		// Keyboard aim
-		if (turretLeftHeld) turretHeading += TURRET_SPEED * delta;
-		if (turretRightHeld) turretHeading -= TURRET_SPEED * delta;
+		if (turretLeftHeld) turretHeading += TURRET_SPEED * aimFactor * delta;
+		if (turretRightHeld) turretHeading -= TURRET_SPEED * aimFactor * delta;
 		if (barrelUpHeld)
-			barrelElevation = Math.min(BARREL_MAX, barrelElevation + BARREL_SPEED * delta);
+			barrelElevation = Math.min(BARREL_MAX, barrelElevation + BARREL_SPEED * aimFactor * delta);
 		if (barrelDownHeld)
-			barrelElevation = Math.max(BARREL_MIN, barrelElevation - BARREL_SPEED * delta);
+			barrelElevation = Math.max(BARREL_MIN, barrelElevation - BARREL_SPEED * aimFactor * delta);
 
 		// Mouse aim — directly controls turret heading and barrel elevation
 		if (mouseDX !== 0 || mouseDY !== 0) {
-			turretHeading -= mouseDX * MOUSE_TURRET_SENS;
+			turretHeading -= mouseDX * MOUSE_TURRET_SENS * aimFactor;
 			barrelElevation = Math.max(
 				BARREL_MIN,
-				Math.min(BARREL_MAX, barrelElevation + mouseDY * MOUSE_BARREL_SENS)
+				Math.min(BARREL_MAX, barrelElevation + mouseDY * MOUSE_BARREL_SENS * aimFactor)
 			);
 			mouseDX = 0;
 			mouseDY = 0;
@@ -472,7 +504,7 @@
 			const targetCamX = tankPosition.x + Math.sin(absHeading) * CAMERA_BEHIND;
 			const targetCamZ = tankPosition.z + Math.cos(absHeading) * CAMERA_BEHIND;
 			const targetCamY = Math.max(
-				tankPosition.y + CAMERA_HEIGHT + elevFraction * CAMERA_BEHIND * 0.5,
+				tankPosition.y + CAMERA_HEIGHT,
 				getTerrainHeight(targetCamX, targetCamZ) + CAMERA_HEIGHT
 			);
 			cameraPosition = new THREE.Vector3(
@@ -485,6 +517,14 @@
 				tankPosition.y + CAMERA_HEIGHT * 0.5 + elevFraction * CAMERA_BEHIND * 0.4,
 				tankPosition.z
 			);
+
+			// Zoom — smoothly narrow/widen the FOV
+			const targetFov = zoomed ? ZOOM_FOV : NORMAL_FOV;
+			currentFov += (targetFov - currentFov) * Math.min(1, ZOOM_FOV_LERP * delta);
+			if (cameraRef) {
+				(cameraRef as THREE.PerspectiveCamera).fov = currentFov;
+				(cameraRef as THREE.PerspectiveCamera).updateProjectionMatrix();
+			}
 
 			if (lightRef) {
 				lightRef.position.set(

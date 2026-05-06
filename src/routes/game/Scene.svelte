@@ -5,11 +5,10 @@
 	import Tank from '$lib/Tank.svelte';
 	import Shell from '$lib/Shell.svelte';
 	import Explosion from '$lib/Explosion.svelte';
+	import Tree from '$lib/Tree.svelte';
 
 	const { scene } = useThrelte();
 	scene.background = new THREE.Color('#87CEEB');
-
-	let { restartKey = 0 } = $props();
 
 	// --- Terrain generation ---
 	const GRID_SEGS = 150;
@@ -19,6 +18,11 @@
 	const BORDER_RAISE = 6.5;
 	const WATER_SIZE = WORLD_SIZE + 40; // water extends 20 units beyond terrain on each side
 	const WATER_SKIRT = 500; // depth of opaque skirt panels below the water perimeter
+
+	// Tank spawning — circle at 80% of terrain half-radius, evenly spaced by count
+	const TANK_COUNT = 1;
+	const SPAWN_RADIUS = (WORLD_SIZE / 2) * 0.8; // 300 units
+	const SPAWN_CLEAR = 40; // no trees within this distance of a spawn point
 
 	function generateHeights(): Float32Array {
 		const h = new Float32Array(N * N);
@@ -210,6 +214,10 @@
 	}
 	setContext('isInBounds', isInBounds);
 
+	// Stable array of trunk colliders, updated in initGame(); Tank reads this every frame.
+	const treeTrunks: { x: number; z: number; r: number }[] = [];
+	setContext('treeTrunks', treeTrunks);
+
 	const CRATER_DEPTH = 0.75;
 
 	function deformTerrain(wx: number, wz: number) {
@@ -241,6 +249,20 @@
 		terrainGeo.computeVertexNormals();
 	}
 
+	interface TreeSpec {
+		id: number;
+		x: number;
+		y: number;
+		z: number;
+		scale: number;
+		rotation: number;
+		numLayers: number;
+		colorIndex: number;
+		burntAt: number | null;
+	}
+	let trees = $state<TreeSpec[]>([]);
+	let nextTreeId = 0;
+
 	interface ShellInstance {
 		id: number;
 		position: THREE.Vector3;
@@ -264,8 +286,17 @@
 	let explosions = $state<ExplodeInstance[]>([]);
 	let nextExplodeId = 0;
 
+	const IGNITION_RADIUS = 10;
+
 	function handleImpact(position: THREE.Vector3) {
 		deformTerrain(position.x, position.z);
+		const now = Date.now();
+		for (const t of trees) {
+			if (t.burntAt != null) continue; // Already burnt
+			const dx = t.x - position.x;
+			const dz = t.z - position.z;
+			if (dx * dx + dz * dz < IGNITION_RADIUS * IGNITION_RADIUS) t.burntAt = now;
+		}
 		explosions.push({ id: nextExplodeId++, position });
 	}
 
@@ -273,9 +304,25 @@
 		explosions = explosions.filter((e) => e.id !== id);
 	}
 
-	let tankRef: { reset: () => void } | undefined;
+	let spawnPositions = $state<{ x: number; z: number; heading: number }[]>([]);
+	let tankRef: { reset: (sx: number, sz: number, sh: number) => void } | undefined;
 
 	function initGame() {
+		// Compute spawn positions first so tree generation can avoid them.
+		// Tanks sit on a circle at SPAWN_RADIUS, evenly spaced, with a random base
+		// rotation each game for variety. Each position has up to 10% radial jitter.
+		const baseAngle = Math.random() * Math.PI * 2;
+		const jitter = SPAWN_RADIUS * 0.1;
+		const newSpawns = Array.from({ length: TANK_COUNT }, (_, i) => {
+			const angle = baseAngle + ((2 * Math.PI) / TANK_COUNT) * i;
+			return {
+				x: Math.cos(angle) * SPAWN_RADIUS + (Math.random() - 0.5) * 2 * jitter,
+				z: Math.sin(angle) * SPAWN_RADIUS + (Math.random() - 0.5) * 2 * jitter,
+				heading: -angle // CW tangent: 90° from outward radial, away from nearest edge
+			};
+		});
+		spawnPositions = newSpawns;
+
 		const prevGeo = terrainGeo;
 		heights = generateHeights();
 		// PlaneGeometry is in the XY plane; setting Z then rotating -90° around X
@@ -310,19 +357,52 @@
 		}
 		terrainGeo.setAttribute('color', new THREE.BufferAttribute(colorsArr, 3));
 		prevGeo?.dispose();
+
+		// Place trees in green zone (height 5–23, gentle slope, away from spawn)
+		const newTrees: TreeSpec[] = [];
+		const TREE_SPACING = 80;
+		for (
+			let wx = -WORLD_SIZE / 2 + TREE_SPACING;
+			wx < WORLD_SIZE / 2 - TREE_SPACING;
+			wx += TREE_SPACING
+		) {
+			for (
+				let wz = -WORLD_SIZE / 2 + TREE_SPACING;
+				wz < WORLD_SIZE / 2 - TREE_SPACING;
+				wz += TREE_SPACING
+			) {
+				const jx = wx + (Math.random() - 0.5) * TREE_SPACING * 0.8;
+				const jz = wz + (Math.random() - 0.5) * TREE_SPACING * 0.8;
+				const h = getTerrainHeight(jx, jz);
+				if (h < 5 || h > 23) continue;
+				const eps = 3;
+				const dhdx = (getTerrainHeight(jx + eps, jz) - getTerrainHeight(jx - eps, jz)) / (2 * eps);
+				const dhdz = (getTerrainHeight(jx, jz + eps) - getTerrainHeight(jx, jz - eps)) / (2 * eps);
+				if (Math.sqrt(dhdx * dhdx + dhdz * dhdz) > 0.5) continue;
+				if (newSpawns.some((s) => (jx - s.x) ** 2 + (jz - s.z) ** 2 < SPAWN_CLEAR ** 2)) continue;
+				newTrees.push({
+					id: nextTreeId++,
+					x: jx,
+					y: h,
+					z: jz,
+					scale: 0.6 + Math.random() * 0.9,
+					rotation: Math.random() * Math.PI * 2,
+					numLayers: 2 + Math.floor(Math.random() * 3),
+					colorIndex: Math.floor(Math.random() * 5),
+					burntAt: null
+				});
+			}
+		}
+		trees = newTrees;
+		treeTrunks.length = 0;
+		for (const t of newTrees) treeTrunks.push({ x: t.x, z: t.z, r: 0.18 * t.scale });
+
 		shells = [];
 		explosions = [];
-		tankRef?.reset();
+		tankRef?.reset(newSpawns[0].x, newSpawns[0].z, newSpawns[0].heading);
 	}
 
 	initGame();
-
-	$effect(() => {
-		if (restartKey > 0) {
-			restartKey = 0;
-			initGame();
-		}
-	});
 </script>
 
 <T.Mesh geometry={terrainGeo} receiveShadow castShadow>
@@ -332,29 +412,37 @@
 <!-- Water surface at y=0 — DoubleSide so it renders as a blue ceiling when camera is below -->
 <T.Mesh rotation.x={-Math.PI / 2}>
 	<T.PlaneGeometry args={[WATER_SIZE, WATER_SIZE]} />
-	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.6} side={THREE.DoubleSide} />
+	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.65} side={THREE.DoubleSide} />
 </T.Mesh>
 
 <!-- Skirts hanging below the water perimeter — same transparency as water surface so the
      blend with the background is identical whether the camera sees water or skirt -->
 <T.Mesh position={[0, -WATER_SKIRT / 2, -WATER_SIZE / 2]}>
 	<T.PlaneGeometry args={[WATER_SIZE, WATER_SKIRT]} />
-	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.6} side={THREE.DoubleSide} />
+	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.65} side={THREE.DoubleSide} />
 </T.Mesh>
 <T.Mesh position={[0, -WATER_SKIRT / 2, WATER_SIZE / 2]}>
 	<T.PlaneGeometry args={[WATER_SIZE, WATER_SKIRT]} />
-	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.6} side={THREE.DoubleSide} />
+	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.65} side={THREE.DoubleSide} />
 </T.Mesh>
 <T.Mesh position={[-WATER_SIZE / 2, -WATER_SKIRT / 2, 0]} rotation.y={Math.PI / 2}>
 	<T.PlaneGeometry args={[WATER_SIZE, WATER_SKIRT]} />
-	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.6} side={THREE.DoubleSide} />
+	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.65} side={THREE.DoubleSide} />
 </T.Mesh>
 <T.Mesh position={[WATER_SIZE / 2, -WATER_SKIRT / 2, 0]} rotation.y={Math.PI / 2}>
 	<T.PlaneGeometry args={[WATER_SIZE, WATER_SKIRT]} />
-	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.6} side={THREE.DoubleSide} />
+	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.65} side={THREE.DoubleSide} />
 </T.Mesh>
 
-<Tank controlled chaseCamera bind:this={tankRef} onfire={handleFire} />
+<Tank
+	controlled
+	chaseCamera
+	spawnX={spawnPositions[0]?.x ?? 0}
+	spawnZ={spawnPositions[0]?.z ?? 0}
+	spawnHeading={spawnPositions[0]?.heading ?? 0}
+	bind:this={tankRef}
+	onfire={handleFire}
+/>
 
 {#each shells as s (s.id)}
 	<Shell
@@ -371,5 +459,18 @@
 		craterDepth={CRATER_DEPTH}
 		onrockland={raiseTerrain}
 		onremove={() => removeExplosion(e.id)}
+	/>
+{/each}
+
+{#each trees as t (t.id)}
+	<Tree
+		x={t.x}
+		y={t.y}
+		z={t.z}
+		scale={t.scale}
+		rotation={t.rotation}
+		numLayers={t.numLayers}
+		colorIndex={t.colorIndex}
+		burntAt={t.burntAt}
 	/>
 {/each}
