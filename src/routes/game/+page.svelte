@@ -5,6 +5,13 @@
 
 	const opponentCount = Math.min(3, Math.max(1, parseInt(page.url.searchParams.get('opponents') ?? '1', 10)));
 
+	interface TankHealthEntry {
+		health: number;
+		destroyed: boolean;
+		color: string;
+	}
+	let tankHealthData = $state<TankHealthEntry[]>([]);
+
 	const RELOAD_TIME = 3000;
 	const FIRE_FADE_DURATION = 1000;
 
@@ -146,9 +153,28 @@
 <div class="game-container">
 	<Canvas shadows>
 		{#key restartKey}
-			<Scene {opponentCount} />
+			<Scene {opponentCount} bind:tankHealthData />
 		{/key}
 	</Canvas>
+
+	{#if tankHealthData.length > 0}
+		{#if tankHealthData[0]}
+			<div class="player-health">
+				<div class="vbar" class:dead={tankHealthData[0].destroyed}>
+					<div class="vfill" style="height:{Math.max(0, tankHealthData[0].health)}%;background:{tankHealthData[0].color}"></div>
+				</div>
+			</div>
+		{/if}
+		{#if tankHealthData.length > 1}
+			<div class="opponent-health">
+				{#each tankHealthData.slice(1) as d}
+					<div class="vbar" class:dead={d.destroyed}>
+						<div class="vfill" style="height:{Math.max(0, d.health)}%;background:{d.color}"></div>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	{/if}
 
 	{#if chargeVisible}
 		<div class="charge-wrap" style="opacity: {chargeOpacity}">
@@ -203,6 +229,52 @@
 		position: relative;
 		width: 100%;
 		height: 100svh;
+	}
+
+	.player-health {
+		position: absolute;
+		top: 50%;
+		right: 2rem;
+		transform: translateY(-50%);
+		pointer-events: none;
+		z-index: 10;
+	}
+
+	.opponent-health {
+		position: absolute;
+		top: 2rem;
+		left: 2rem;
+		display: flex;
+		gap: 7px;
+		align-items: flex-end;
+		pointer-events: none;
+		z-index: 10;
+	}
+
+	.vbar {
+		width: 14px;
+		height: 90px;
+		background: rgba(0, 0, 0, 0.55);
+		border: 1px solid rgba(255, 255, 255, 0.22);
+		border-radius: 4px;
+		overflow: hidden;
+		position: relative;
+	}
+
+	.player-health .vbar {
+		width: 22px;
+		height: 50vh;
+	}
+
+	.vbar.dead {
+		opacity: 0.3;
+	}
+
+	.vfill {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
 	}
 
 	.charge-wrap {

@@ -1,9 +1,10 @@
 <script lang="ts">
 	import * as THREE from 'three';
-	import { T, useTask, useThrelte } from '@threlte/core';
+	import { T, useTask } from '@threlte/core';
 	import { getContext, onMount, onDestroy } from 'svelte';
 	import type { Object3D } from 'three';
 	import Splash from './Splash.svelte';
+	import Flames from './Flames.svelte';
 
 	let {
 		controlled = false,
@@ -13,29 +14,41 @@
 		spawnHeading = 0,
 		tankColor = '#CBFF70',
 		onfire = undefined as
-			| ((
-					position: THREE.Vector3,
-					velocity: THREE.Vector3,
-					firingBody: { hitAt: number | null }
-			  ) => void)
+			| ((position: THREE.Vector3, velocity: THREE.Vector3, firingBodyUid: number) => void)
 			| undefined,
-		onexplode = undefined as ((position: THREE.Vector3) => void) | undefined
+		onexplode = undefined as ((position: THREE.Vector3) => void) | undefined,
+		onhealthchange = undefined as ((health: number, destroyed: boolean) => void) | undefined
 	} = $props();
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const treeTrunks = getContext<{ x: number; z: number; r: number }[]>('treeTrunks');
-	const tankBodies =
-		getContext<{ x: number; z: number; pushVx: number; pushVz: number; hitAt: number | null }[]>(
-			'tankBodies'
-		);
+	const tankBodies = getContext<
+		{
+			uid: number;
+			x: number;
+			y: number;
+			z: number;
+			pushVx: number;
+			pushVz: number;
+			hitAt: number | null;
+			lastHit: { dist: number; wx: number; wz: number; splash?: boolean } | null;
+		}[]
+	>('tankBodies');
 	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
 
 	// Register this tank's body; other tanks write impulses here, we apply + decay them each frame.
 	// hitAt is written by Shell when a shell strikes us, triggering the fire+explosion sequence.
-	const ownBody = { x: spawnX, z: spawnZ, pushVx: 0, pushVz: 0, hitAt: null as number | null };
+	const ownBody = {
+		uid: Math.floor(Math.random() * 0xffffffff),
+		x: spawnX,
+		y: 0,
+		z: spawnZ,
+		pushVx: 0,
+		pushVz: 0,
+		hitAt: null as number | null,
+		lastHit: null as { dist: number; wx: number; wz: number; splash?: boolean } | null
+	};
 	tankBodies?.push(ownBody);
-
-	const { scene: threlteScene } = useThrelte();
 
 	// --- Constants ---
 	const ACCEL = 4;
@@ -106,22 +119,30 @@
 	const LIGHT_OFFSET = new THREE.Vector3(-50, 50, 30);
 	const SHADOW_HALF = 50;
 
-	// --- Fire effect (imperative Three.js, same pattern as Tree.svelte) ---
-	const TANK_BURN_DURATION = 3; // seconds of burning before the explosion
-	let isBurnt = false;
-	let tankDestroyed = false;
+	// --- Health and fire system ---
+	const TANK_MAX_HEALTH = 100;
+	const CENTER_HIT_DAMAGE = 50; // HP lost for a dead-centre hit (2 hits = death)
+	const EDGE_HIT_DAMAGE = 15; // HP lost for a glancing hit at max radius
+	const CENTER_BURN_DURATION = 3; // seconds of fire for a centre hit
+	const EDGE_BURN_DURATION = 0.7; // seconds of fire for an edge hit
+	const HIT_RADIUS = 2.5; // must match Shell.svelte
+	const SPLASH_DAMAGE = 8; // HP from nearby explosion — one flame, brief burn
+	const SPLASH_BURN_DURATION = 0.4;
+	let health = $state(TANK_MAX_HEALTH);
+	let burning = $state(false);
+	let tankDestroyed = $state(false);
 	let burnElapsed = 0;
+	let burnDuration = 0;
+	let burnDamageRate = 0;
+	let hitOffsetX = $state(0); // world-space XZ offset from tank centre to hit point (clamped)
+	let hitOffsetZ = $state(0);
+	let flameCount = $state(6); // number of flame cones visible — scales with hit proximity
 	let tankGroupRef: THREE.Group | null = null;
-	let fireGroup: THREE.Group | null = null;
-	let fireLightRef: THREE.PointLight | null = null;
-	interface FlameData {
-		mesh: THREE.Mesh;
-		phase: number;
-		speed: number;
-	}
-	const flames: FlameData[] = [];
+	// Explicit change tracking for onhealthchange — avoids $effect and its reactive dependency on the prop
+	let _lastReportedHealth = -1;
+	let _lastReportedDestroyed = false;
 
-	// Reusable scratch objects to avoid per-frame allocations in useTask
+	// Reusable scratch objects to avoid per-frame allocations in useTask and fire()
 	const _X_AXIS = new THREE.Vector3(1, 0, 0);
 	const _Y_AXIS = new THREE.Vector3(0, 1, 0);
 	const _scratchEuler = new THREE.Euler(0, 0, 0, 'XYZ');
@@ -201,54 +222,6 @@
 
 	const hullGeometry = makeHullGeometry();
 
-	function createFireEffect() {
-		fireGroup = new THREE.Group();
-		// Central tall flame + 5 outer flames spread over the hull footprint
-		const defs = [
-			{ x: 0, z: 0, h: 3.0, r: 0.32, phase: 0.0 },
-			{ x: 0.8, z: 0.6, h: 1.8, r: 0.22, phase: 1.1 },
-			{ x: -0.8, z: 0.6, h: 1.6, r: 0.20, phase: 2.3 },
-			{ x: 0.7, z: -0.9, h: 2.1, r: 0.26, phase: 0.7 },
-			{ x: -0.7, z: -0.9, h: 1.5, r: 0.19, phase: 1.9 },
-			{ x: 0, z: 0.9, h: 1.4, r: 0.18, phase: 3.1 }
-		];
-		for (const d of defs) {
-			const geo = new THREE.ConeGeometry(d.r, d.h, 6);
-			const col = Math.random() > 0.5 ? '#ff8800' : '#ffcc00';
-			const mat = new THREE.MeshBasicMaterial({
-				color: col,
-				transparent: true,
-				opacity: 0.92,
-				depthWrite: false
-			});
-			const mesh = new THREE.Mesh(geo, mat);
-			mesh.position.set(d.x, d.h / 2, d.z); // pivot cone base at the defined position
-			flames.push({ mesh, phase: d.phase, speed: 5 + Math.random() * 5 });
-			fireGroup.add(mesh);
-		}
-		const light = new THREE.PointLight(0xff6600, 0, 22, 1.5);
-		light.position.set(0, 2.5, 0);
-		fireLightRef = light;
-		fireGroup.add(light);
-		fireGroup.visible = false;
-		threlteScene.add(fireGroup);
-	}
-
-	function updateFireEffect(elapsed: number) {
-		if (!fireGroup) return;
-		fireGroup.position.set(tankPosition.x, tankPosition.y + 1.2, tankPosition.z);
-		for (const f of flames) {
-			const s1 = Math.sin(elapsed * f.speed + f.phase);
-			const s2 = Math.sin(elapsed * f.speed * 1.7 + f.phase + 1.0);
-			f.mesh.scale.y = 0.75 + 0.4 * s1;
-			f.mesh.scale.x = 0.65 + 0.35 * Math.abs(s2);
-			f.mesh.scale.z = 0.65 + 0.35 * Math.abs(s2);
-		}
-		if (fireLightRef) fireLightRef.intensity = 7 * (0.7 + 0.3 * Math.sin(elapsed * 10));
-	}
-
-	createFireEffect();
-
 	const _texLoader = new THREE.TextureLoader();
 	function loadTex(prefix: string, suffix: string, srgb = false): THREE.Texture {
 		const tex = _texLoader.load(`/textures/${prefix}_1K-JPG_${suffix}.jpg`);
@@ -294,11 +267,6 @@
 		barrelMaterial.roughnessMap?.dispose();
 		barrelMaterial.metalnessMap?.dispose();
 		barrelMaterial.dispose();
-		for (const f of flames) {
-			f.mesh.geometry.dispose();
-			(f.mesh.material as THREE.Material).dispose();
-		}
-		if (fireGroup) threlteScene.remove(fireGroup);
 	});
 
 	const handleLightCreate = (ref: THREE.DirectionalLight) => {
@@ -396,7 +364,7 @@
 		dir.applyAxisAngle(_Y_AXIS, tankHeading);
 		dir.multiplyScalar(SHELL_MIN_SPEED + chargeLevel * (SHELL_MAX_SPEED - SHELL_MIN_SPEED));
 
-		onfire?.(muzzle, dir, ownBody);
+		onfire?.(muzzle, dir, ownBody.uid);
 	}
 
 	// --- Terrain helpers ---
@@ -435,6 +403,15 @@
 	}
 
 	export function reset(sx = 0, sz = 0, sh = 0) {
+		health = TANK_MAX_HEALTH;
+		burning = false;
+		burnElapsed = 0;
+		tankDestroyed = false;
+		ownBody.hitAt = null;
+		ownBody.lastHit = null;
+		hitOffsetX = 0;
+		hitOffsetZ = 0;
+		flameCount = 6;
 		speed = 0;
 		velocityY = 0;
 		tankHeading = sh;
@@ -460,30 +437,67 @@
 
 	// --- Per-frame loop ---
 	useTask((delta) => {
+		// Report health changes — called from useTask (outside Svelte reactivity) to avoid cycles
+		if (health !== _lastReportedHealth || tankDestroyed !== _lastReportedDestroyed) {
+			_lastReportedHealth = health;
+			_lastReportedDestroyed = tankDestroyed;
+			onhealthchange?.(health, tankDestroyed);
+		}
+
 		// Fully destroyed — nothing to do
 		if (tankDestroyed) return;
 
-		// Shell hit us — start burning
-		if (ownBody.hitAt !== null && !isBurnt) {
-			isBurnt = true;
-			burnElapsed = 0;
-			speed = 0;
-			braking = false;
-			if (fireGroup) fireGroup.visible = true;
+		// Incoming hit — compute damage and start fire at impact location
+		if (ownBody.lastHit !== null) {
+			const { dist, wx, wz, splash } = ownBody.lastHit;
+			ownBody.lastHit = null;
+			// Splash: nearby explosion caused a brief 1-flame fire — don't interrupt a worse ongoing burn
+			if (splash) {
+				if (!burning) {
+					burnDuration = SPLASH_BURN_DURATION;
+					burnDamageRate = SPLASH_DAMAGE / SPLASH_BURN_DURATION;
+					hitOffsetX = Math.max(-1.5, Math.min(1.5, wx - tankPosition.x));
+					hitOffsetZ = Math.max(-1.5, Math.min(1.5, wz - tankPosition.z));
+					flameCount = 1;
+					burning = true;
+					burnElapsed = 0;
+					speed = 0;
+					braking = false;
+				}
+			} else {
+				// Direct body hit — 2 flames minimum so edge hits are visually distinct from splash
+				const hitFraction = 1 - Math.min(1, dist / HIT_RADIUS);
+				burnDuration = EDGE_BURN_DURATION + hitFraction * (CENTER_BURN_DURATION - EDGE_BURN_DURATION);
+				const totalDamage = EDGE_HIT_DAMAGE + hitFraction * (CENTER_HIT_DAMAGE - EDGE_HIT_DAMAGE);
+				burnDamageRate = totalDamage / burnDuration;
+				hitOffsetX = Math.max(-1.5, Math.min(1.5, wx - tankPosition.x));
+				hitOffsetZ = Math.max(-1.5, Math.min(1.5, wz - tankPosition.z));
+				flameCount = Math.max(2, Math.round(hitFraction * 6));
+				burning = true;
+				burnElapsed = 0;
+				speed = 0;
+				braking = false;
+			}
 		}
 
-		// Burning state — animate fire, then explode
-		if (isBurnt) {
+		// Burning state — drain health; explode only if health reaches 0
+		if (burning) {
 			burnElapsed += delta;
-			updateFireEffect(burnElapsed);
-			if (burnElapsed >= TANK_BURN_DURATION) {
+			health = Math.max(0, health - burnDamageRate * delta);
+			if (health <= 0) {
+				health = 0;
+				burning = false;
 				tankDestroyed = true;
-				isBurnt = false;
+				ownBody.hitAt = Date.now();
 				onexplode?.(tankPosition.clone());
 				if (tankGroupRef) tankGroupRef.visible = false;
-				if (fireGroup) fireGroup.visible = false;
+				return;
 			}
-			return;
+			if (burnElapsed >= burnDuration) {
+				burning = false;
+			} else {
+				return;
+			}
 		}
 
 		// Input — only when grounded
@@ -624,6 +638,7 @@
 			tankPosition = new THREE.Vector3(newX, newY, newZ);
 		}
 		ownBody.x = tankPosition.x;
+		ownBody.y = tankPosition.y;
 		ownBody.z = tankPosition.z;
 
 		// Pitch and roll (only while grounded, reuse slope computed above)
@@ -876,3 +891,12 @@
 {#each wakes as wake (wake.id)}
 	<Splash x={wake.x} z={wake.z} onremove={() => (wakes = wakes.filter((w) => w.id !== wake.id))} />
 {/each}
+
+<Flames
+	x={tankPosition.x + hitOffsetX}
+	y={tankPosition.y}
+	z={tankPosition.z + hitOffsetZ}
+	baseHeight={0.3}
+	{burning}
+	{flameCount}
+/>

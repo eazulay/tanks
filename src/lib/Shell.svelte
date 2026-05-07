@@ -7,13 +7,13 @@
 	let {
 		position,
 		velocity,
-		excludeBody = undefined,
+		excludeBodyUid = undefined,
 		onremove,
 		onimpact
 	}: {
 		position: THREE.Vector3;
 		velocity: THREE.Vector3;
-		excludeBody?: object;
+		excludeBodyUid?: number;
 		onremove?: () => void;
 		onimpact?: (position: THREE.Vector3) => void;
 	} = $props();
@@ -21,15 +21,34 @@
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
 	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
-	const tankBodies = getContext<Array<{ x: number; z: number; hitAt: number | null }>>('tankBodies');
+	const tankBodies = getContext<
+		Array<{
+			uid: number;
+			x: number;
+			y: number;
+			z: number;
+			hitAt: number | null;
+			lastHit: { dist: number; wx: number; wz: number; splash?: boolean } | null;
+		}>
+	>('tankBodies');
+	type TreeVol = { x: number; z: number; y: number; top: number; canopyR: number };
+	const forNearbyTreeVolumes = getContext<
+		(x: number, z: number, fn: (vol: TreeVol) => boolean) => void
+	>('forNearbyTreeVolumes');
 
 	const GRAVITY = 10;
 	const HIT_RADIUS = 2.5;
 	const WATER_DRAG = 0.8; // fraction of velocity remaining after 1 s underwater
+	// Firer self-hit exclusion grace window.
+	// The height gate (HIT_HEIGHT) applies to ALL tanks so shells passing high above any tank
+	// don't register a hit.
+	const FIRER_GRACE = 0.3;
+	const HIT_HEIGHT = 3.0; // shell must be within ±3 m of body.y to register a hit
 
 	const pos = position.clone();
 	const vel = velocity.clone();
 	let prevY = pos.y;
+	let firerGraceTimer = FIRER_GRACE;
 
 	// Share our live position vector with the shell tracker — Tank's camera reads it when zoomed.
 	// pos is updated in-place each frame, so shellFollow.pos stays in sync automatically.
@@ -64,6 +83,39 @@
 		z: number;
 	}
 
+	// Closest-approach tracker: one entry per tank whose hit cylinder the shell is currently inside.
+	// The hit is not declared until the shell starts moving away (dist > minDist) or exits the cylinder,
+	// so minDist reflects the actual closest pass rather than always measuring at the outer boundary.
+	interface PendingHit {
+		body: {
+			uid: number;
+			x: number;
+			y: number;
+			z: number;
+			hitAt: number | null;
+			lastHit: { dist: number; wx: number; wz: number; splash?: boolean } | null;
+		};
+		minDist: number;
+		minWx: number;
+		minWz: number;
+	}
+	const pendingHits: PendingHit[] = [];
+
+	function flushPendingHit(): boolean {
+		for (let i = 0; i < pendingHits.length; i++) {
+			const p = pendingHits[i];
+			if (p.body.hitAt === null) {
+				p.body.lastHit = { dist: p.minDist, wx: p.minWx, wz: p.minWz };
+				pendingHits.splice(i, 1);
+				done = true;
+				if (groupRef) groupRef.visible = false;
+				return true;
+			}
+		}
+		pendingHits.length = 0;
+		return false;
+	}
+
 	let splashes = $state<SplashEntry[]>([]);
 	let nextSplashId = 0;
 
@@ -82,6 +134,8 @@
 			return;
 		}
 
+		if (firerGraceTimer > 0) firerGraceTimer -= delta;
+
 		// Physics
 		if (isInBounds(pos.x, pos.z) && pos.y <= 0 && getTerrainHeight(pos.x, pos.z) < 0) {
 			const drag = Math.pow(WATER_DRAG, delta);
@@ -96,6 +150,7 @@
 
 		// Out-of-bounds shells have no terrain-impact detection, so clean up by Y drop
 		if (!isInBounds(pos.x, pos.z) && pos.y < position.y - 15) {
+			if (flushPendingHit()) return;
 			onremove?.();
 			return;
 		}
@@ -107,20 +162,60 @@
 			groupRef.quaternion.copy(_q);
 		}
 
-		// Tank hit detection — check before terrain impact so hits register even on slopes
+		// Tank hit detection — closest-approach tracking.
+		// Declaring on first cylinder entry always records dist ≈ HIT_RADIUS (boundary), so instead
+		// we track minDist while inside and declare only when the shell starts moving away or exits.
 		if (tankBodies) {
-			for (const body of tankBodies) {
-				if ((body as object) === excludeBody) continue;
-				if (body.hitAt !== null) continue;
-				const dx = pos.x - body.x;
-				const dz = pos.z - body.z;
-				if (dx * dx + dz * dz < HIT_RADIUS * HIT_RADIUS) {
-					body.hitAt = Date.now();
+			// Advance existing pending approaches
+			for (let i = pendingHits.length - 1; i >= 0; i--) {
+				const p = pendingHits[i];
+				if (p.body.hitAt !== null) { pendingHits.splice(i, 1); continue; }
+				const dx = pos.x - p.body.x;
+				const dz = pos.z - p.body.z;
+				const dist = Math.sqrt(dx * dx + dz * dz);
+				const inCylinder = dist < HIT_RADIUS && Math.abs(pos.y - p.body.y) < HIT_HEIGHT;
+				if (inCylinder && dist < p.minDist) {
+					p.minDist = dist;
+					p.minWx = pos.x;
+					p.minWz = pos.z;
+				} else {
+					// Moving away or exited — closest point reached, register hit
+					p.body.lastHit = { dist: p.minDist, wx: p.minWx, wz: p.minWz };
+					pendingHits.splice(i, 1);
 					done = true;
 					if (groupRef) groupRef.visible = false;
 					return;
 				}
 			}
+			// Check for shells newly entering a tank's hit cylinder
+			for (const body of tankBodies) {
+				if (body.hitAt !== null) continue;
+				if (pendingHits.some((p) => p.body === body)) continue;
+				const dx = pos.x - body.x;
+				const dz = pos.z - body.z;
+				const distSq = dx * dx + dz * dz;
+				if (distSq < HIT_RADIUS * HIT_RADIUS && Math.abs(pos.y - body.y) < HIT_HEIGHT) {
+					// Firer grace: UID comparison (not object ref — Svelte $state proxies break ===)
+					if (excludeBodyUid !== undefined && body.uid === excludeBodyUid && firerGraceTimer > 0) continue;
+					pendingHits.push({ body, minDist: Math.sqrt(distSq), minWx: pos.x, minWz: pos.z });
+				}
+			}
+		}
+
+		// Tree canopy hit detection — spatial grid lookup, checks only nearby cells
+		if (forNearbyTreeVolumes) {
+			forNearbyTreeVolumes(pos.x, pos.z, (vol) => {
+				const dx = pos.x - vol.x;
+				const dz = pos.z - vol.z;
+				if (dx * dx + dz * dz < vol.canopyR * vol.canopyR && pos.y > vol.y && pos.y < vol.top) {
+					onimpact?.(pos.clone());
+					done = true;
+					if (groupRef) groupRef.visible = false;
+					return true;
+				}
+				return false;
+			});
+			if (done) return;
 		}
 
 		if (isInBounds(pos.x, pos.z)) {
@@ -134,6 +229,8 @@
 
 			const groundY = getTerrainHeight(pos.x, pos.z);
 			if (pos.y <= groundY) {
+				// If already inside a tank's cylinder, register a tank hit instead of a terrain explosion
+				if (flushPendingHit()) return;
 				onimpact?.(pos.clone());
 				done = true;
 				if (groupRef) groupRef.visible = false;

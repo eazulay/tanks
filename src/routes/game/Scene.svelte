@@ -7,7 +7,19 @@
 	import Explosion from '$lib/Explosion.svelte';
 	import Tree from '$lib/Tree.svelte';
 
-	let { opponentCount = 1 }: { opponentCount?: number } = $props();
+	interface TankHealthEntry {
+		health: number;
+		destroyed: boolean;
+		color: string;
+	}
+
+	let {
+		opponentCount = 1,
+		tankHealthData = $bindable<TankHealthEntry[]>([])
+	}: {
+		opponentCount?: number;
+		tankHealthData?: TankHealthEntry[];
+	} = $props();
 
 	const { scene } = useThrelte();
 	scene.background = new THREE.Color('#87CEEB');
@@ -225,11 +237,62 @@
 	const treeTrunks: { x: number; z: number; r: number }[] = [];
 	setContext('treeTrunks', treeTrunks);
 
+	// Stable array of tree bounding cylinders for shell hit detection.
+	// canopyR = widest foliage tier radius; top = world Y of tree apex.
+	type TreeVol = { x: number; z: number; y: number; top: number; canopyR: number };
+	const treeVolumes: TreeVol[] = [];
+
+	// Spatial grid for tree volumes — shell queries only the 3×3 cells around its XZ position
+	// instead of scanning every tree. Cell size >> max canopyR (2.7) so one cell of padding suffices.
+	const TREE_GRID_CELL = 50;
+	const treeVolumeGrid = new Map<string, TreeVol[]>();
+
+	function forNearbyTreeVolumes(
+		x: number,
+		z: number,
+		fn: (vol: TreeVol) => boolean
+	): void {
+		const gx = Math.floor(x / TREE_GRID_CELL);
+		const gz = Math.floor(z / TREE_GRID_CELL);
+		for (let dx = -1; dx <= 1; dx++) {
+			for (let dz = -1; dz <= 1; dz++) {
+				const cell = treeVolumeGrid.get(`${gx + dx},${gz + dz}`);
+				if (!cell) continue;
+				for (const vol of cell) {
+					if (fn(vol)) return;
+				}
+			}
+		}
+	}
+	setContext('forNearbyTreeVolumes', forNearbyTreeVolumes);
+
+	// Mirror of Tree.svelte's layer stacking — returns height of tree apex above its base.
+	function treeApexHeight(scale: number, numLayers: number): number {
+		const baseH = 2.5 * scale;
+		let layerBaseY = 3.5 * scale * 0.6; // trunkH * 0.6
+		let topY = 0;
+		for (let i = 0; i < numLayers; i++) {
+			const h = baseH * (1 - i * 0.22);
+			topY = layerBaseY + h;
+			layerBaseY += h * 0.52;
+		}
+		return topY;
+	}
+
 	// Stable array of live tank bodies, one entry per Tank instance.
 	// Each Tank pushes its own entry on mount and keeps it updated every physics frame.
 	// pushVx/pushVz accumulate impulses written by colliding tanks; the owner applies and decays them.
 	// hitAt is set by Shell when a shell strikes the tank; Tank watches it to trigger fire+explosion.
-	const tankBodies: { x: number; z: number; pushVx: number; pushVz: number; hitAt: number | null }[] = [];
+	const tankBodies: {
+		uid: number;
+		x: number;
+		y: number;
+		z: number;
+		pushVx: number;
+		pushVz: number;
+		hitAt: number | null;
+		lastHit: { dist: number; wx: number; wz: number; splash?: boolean } | null;
+	}[] = [];
 	setContext('tankBodies', tankBodies);
 
 	// Shell position tracker — Shell writes its live position here; Tank camera reads it when zoomed.
@@ -288,7 +351,7 @@
 		position: THREE.Vector3;
 		velocity: THREE.Vector3;
 		tracked: boolean; // true only for the player-controlled tank's shells
-		firingBody: { hitAt: number | null }; // excluded from hit detection inside the shell
+		firingBodyUid: number; // UID of firing tank body — compared with body.uid (not a reference, avoids Svelte proxy identity issues)
 	}
 	let shells = $state<ShellInstance[]>([]);
 	let nextShellId = 0;
@@ -296,10 +359,10 @@
 	function handlePlayerFire(
 		position: THREE.Vector3,
 		velocity: THREE.Vector3,
-		firingBody: { hitAt: number | null }
+		firingBodyUid: number
 	) {
 		const id = nextShellId++;
-		shells.push({ id, position, velocity, tracked: true, firingBody });
+		shells.push({ id, position, velocity, tracked: true, firingBodyUid });
 		trackedExplosionId = null;
 	}
 
@@ -321,21 +384,31 @@
 	let nextExplodeId = 0;
 
 	const IGNITION_RADIUS = 10;
+	const SPLASH_RADIUS = 5; // explosion splash damage radius for nearby tanks
 
 	function handleImpact(position: THREE.Vector3, tracked: boolean) {
 		deformTerrain(position.x, position.z);
 		const now = Date.now();
 		for (const t of trees) {
-			if (t.burntAt != null) continue; // Already burnt
+			if (t.burntAt != null) continue;
 			const dx = t.x - position.x;
 			const dz = t.z - position.z;
 			if (dx * dx + dz * dz < IGNITION_RADIUS * IGNITION_RADIUS) t.burntAt = now;
+		}
+		// Splash damage — tanks close to the impact point catch a brief fire
+		for (const body of tankBodies) {
+			if (body.hitAt !== null) continue; // destroyed
+			if (body.lastHit !== null) continue; // direct hit already pending — don't overwrite
+			const dx = body.x - position.x;
+			const dz = body.z - position.z;
+			if (dx * dx + dz * dz < SPLASH_RADIUS * SPLASH_RADIUS) {
+				body.lastHit = { dist: 0, wx: position.x, wz: position.z, splash: true };
+			}
 		}
 		const id = nextExplodeId++;
 		explosions.push({ id, position });
 		if (tracked) {
 			trackedExplosionId = id;
-			// Lock shell-follow target at the impact point so camera holds on it during the explosion
 			shellFollow.pos = position.clone();
 		}
 	}
@@ -379,6 +452,11 @@
 			};
 		});
 		spawnPositions = newSpawns;
+		tankHealthData = Array.from({ length: TANK_COUNT }, (_, i) => ({
+			health: 100,
+			destroyed: false,
+			color: TANK_COLORS[i] ?? TANK_COLORS[TANK_COLORS.length - 1]
+		}));
 
 		const prevGeo = terrainGeo;
 		heights = generateHeights();
@@ -452,7 +530,23 @@
 		}
 		trees = newTrees;
 		treeTrunks.length = 0;
-		for (const t of newTrees) treeTrunks.push({ x: t.x, z: t.z, r: 0.18 * t.scale });
+		treeVolumes.length = 0;
+		treeVolumeGrid.clear();
+		for (const t of newTrees) {
+			treeTrunks.push({ x: t.x, z: t.z, r: 0.18 * t.scale });
+			const vol: TreeVol = {
+				x: t.x,
+				z: t.z,
+				y: t.y,
+				top: t.y + treeApexHeight(t.scale, t.numLayers),
+				canopyR: 1.8 * t.scale
+			};
+			treeVolumes.push(vol);
+			const key = `${Math.floor(t.x / TREE_GRID_CELL)},${Math.floor(t.z / TREE_GRID_CELL)}`;
+			let cell = treeVolumeGrid.get(key);
+			if (!cell) { cell = []; treeVolumeGrid.set(key, cell); }
+			cell.push(vol);
+		}
 
 		shells = [];
 		explosions = [];
@@ -501,6 +595,9 @@
 	bind:this={tankRef}
 	onfire={handlePlayerFire}
 	onexplode={handleTankExplosion}
+	onhealthchange={(h, d) => {
+		if (tankHealthData[0]) { tankHealthData[0].health = h; tankHealthData[0].destroyed = d; }
+	}}
 />
 
 {#each spawnPositions.slice(1) as sp, i (i)}
@@ -510,6 +607,10 @@
 		spawnZ={sp.z}
 		spawnHeading={sp.heading}
 		onexplode={handleTankExplosion}
+		onhealthchange={(h, d) => {
+			const idx = i + 1;
+			if (tankHealthData[idx]) { tankHealthData[idx].health = h; tankHealthData[idx].destroyed = d; }
+		}}
 	/>
 {/each}
 
@@ -517,7 +618,7 @@
 	<Shell
 		position={s.position}
 		velocity={s.velocity}
-		excludeBody={s.firingBody}
+		excludeBodyUid={s.firingBodyUid}
 		onremove={() => removeShell(s.id)}
 		onimpact={(pos) => handleImpact(pos, s.tracked)}
 	/>
