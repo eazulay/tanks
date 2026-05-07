@@ -7,11 +7,13 @@
 	let {
 		position,
 		velocity,
+		excludeBody = undefined,
 		onremove,
 		onimpact
 	}: {
 		position: THREE.Vector3;
 		velocity: THREE.Vector3;
+		excludeBody?: object;
 		onremove?: () => void;
 		onimpact?: (position: THREE.Vector3) => void;
 	} = $props();
@@ -19,8 +21,10 @@
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
 	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
+	const tankBodies = getContext<Array<{ x: number; z: number; hitAt: number | null }>>('tankBodies');
 
 	const GRAVITY = 10;
+	const HIT_RADIUS = 2.5;
 	const WATER_DRAG = 0.8; // fraction of velocity remaining after 1 s underwater
 
 	const pos = position.clone();
@@ -101,6 +105,22 @@
 			_dir.copy(vel).normalize();
 			_q.setFromUnitVectors(_up, _dir);
 			groupRef.quaternion.copy(_q);
+		}
+
+		// Tank hit detection — check before terrain impact so hits register even on slopes
+		if (tankBodies) {
+			for (const body of tankBodies) {
+				if ((body as object) === excludeBody) continue;
+				if (body.hitAt !== null) continue;
+				const dx = pos.x - body.x;
+				const dz = pos.z - body.z;
+				if (dx * dx + dz * dz < HIT_RADIUS * HIT_RADIUS) {
+					body.hitAt = Date.now();
+					done = true;
+					if (groupRef) groupRef.visible = false;
+					return;
+				}
+			}
 		}
 
 		if (isInBounds(pos.x, pos.z)) {

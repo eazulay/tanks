@@ -228,7 +228,8 @@
 	// Stable array of live tank bodies, one entry per Tank instance.
 	// Each Tank pushes its own entry on mount and keeps it updated every physics frame.
 	// pushVx/pushVz accumulate impulses written by colliding tanks; the owner applies and decays them.
-	const tankBodies: { x: number; z: number; pushVx: number; pushVz: number }[] = [];
+	// hitAt is set by Shell when a shell strikes the tank; Tank watches it to trigger fire+explosion.
+	const tankBodies: { x: number; z: number; pushVx: number; pushVz: number; hitAt: number | null }[] = [];
 	setContext('tankBodies', tankBodies);
 
 	// Shell position tracker — Shell writes its live position here; Tank camera reads it when zoomed.
@@ -287,13 +288,18 @@
 		position: THREE.Vector3;
 		velocity: THREE.Vector3;
 		tracked: boolean; // true only for the player-controlled tank's shells
+		firingBody: { hitAt: number | null }; // excluded from hit detection inside the shell
 	}
 	let shells = $state<ShellInstance[]>([]);
 	let nextShellId = 0;
 
-	function handlePlayerFire(position: THREE.Vector3, velocity: THREE.Vector3) {
+	function handlePlayerFire(
+		position: THREE.Vector3,
+		velocity: THREE.Vector3,
+		firingBody: { hitAt: number | null }
+	) {
 		const id = nextShellId++;
-		shells.push({ id, position, velocity, tracked: true });
+		shells.push({ id, position, velocity, tracked: true, firingBody });
 		trackedExplosionId = null;
 	}
 
@@ -341,6 +347,18 @@
 			shellFollow.pos = null;
 			window.dispatchEvent(new CustomEvent('shell-sequence-done'));
 		}
+	}
+
+	function handleTankExplosion(position: THREE.Vector3) {
+		deformTerrain(position.x, position.z);
+		const now = Date.now();
+		for (const t of trees) {
+			if (t.burntAt != null) continue;
+			const dx = t.x - position.x;
+			const dz = t.z - position.z;
+			if (dx * dx + dz * dz < IGNITION_RADIUS * IGNITION_RADIUS) t.burntAt = now;
+		}
+		explosions.push({ id: nextExplodeId++, position });
 	}
 
 	let spawnPositions = $state<{ x: number; z: number; heading: number }[]>([]);
@@ -482,6 +500,7 @@
 	spawnHeading={spawnPositions[0]?.heading ?? 0}
 	bind:this={tankRef}
 	onfire={handlePlayerFire}
+	onexplode={handleTankExplosion}
 />
 
 {#each spawnPositions.slice(1) as sp, i (i)}
@@ -490,6 +509,7 @@
 		spawnX={sp.x}
 		spawnZ={sp.z}
 		spawnHeading={sp.heading}
+		onexplode={handleTankExplosion}
 	/>
 {/each}
 
@@ -497,6 +517,7 @@
 	<Shell
 		position={s.position}
 		velocity={s.velocity}
+		excludeBody={s.firingBody}
 		onremove={() => removeShell(s.id)}
 		onimpact={(pos) => handleImpact(pos, s.tracked)}
 	/>

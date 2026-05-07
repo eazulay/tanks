@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as THREE from 'three';
-	import { T, useTask } from '@threlte/core';
+	import { T, useTask, useThrelte } from '@threlte/core';
 	import { getContext, onMount, onDestroy } from 'svelte';
 	import type { Object3D } from 'three';
 	import Splash from './Splash.svelte';
@@ -12,17 +12,30 @@
 		spawnZ = 0,
 		spawnHeading = 0,
 		tankColor = '#CBFF70',
-		onfire = undefined as ((position: THREE.Vector3, velocity: THREE.Vector3) => void) | undefined
+		onfire = undefined as
+			| ((
+					position: THREE.Vector3,
+					velocity: THREE.Vector3,
+					firingBody: { hitAt: number | null }
+			  ) => void)
+			| undefined,
+		onexplode = undefined as ((position: THREE.Vector3) => void) | undefined
 	} = $props();
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const treeTrunks = getContext<{ x: number; z: number; r: number }[]>('treeTrunks');
-	const tankBodies = getContext<{ x: number; z: number; pushVx: number; pushVz: number }[]>('tankBodies');
+	const tankBodies =
+		getContext<{ x: number; z: number; pushVx: number; pushVz: number; hitAt: number | null }[]>(
+			'tankBodies'
+		);
 	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
 
 	// Register this tank's body; other tanks write impulses here, we apply + decay them each frame.
-	const ownBody = { x: spawnX, z: spawnZ, pushVx: 0, pushVz: 0 };
+	// hitAt is written by Shell when a shell strikes us, triggering the fire+explosion sequence.
+	const ownBody = { x: spawnX, z: spawnZ, pushVx: 0, pushVz: 0, hitAt: null as number | null };
 	tankBodies?.push(ownBody);
+
+	const { scene: threlteScene } = useThrelte();
 
 	// --- Constants ---
 	const ACCEL = 4;
@@ -92,6 +105,21 @@
 
 	const LIGHT_OFFSET = new THREE.Vector3(-50, 50, 30);
 	const SHADOW_HALF = 50;
+
+	// --- Fire effect (imperative Three.js, same pattern as Tree.svelte) ---
+	const TANK_BURN_DURATION = 3; // seconds of burning before the explosion
+	let isBurnt = false;
+	let tankDestroyed = false;
+	let burnElapsed = 0;
+	let tankGroupRef: THREE.Group | null = null;
+	let fireGroup: THREE.Group | null = null;
+	let fireLightRef: THREE.PointLight | null = null;
+	interface FlameData {
+		mesh: THREE.Mesh;
+		phase: number;
+		speed: number;
+	}
+	const flames: FlameData[] = [];
 
 	// Reusable scratch objects to avoid per-frame allocations in useTask
 	const _X_AXIS = new THREE.Vector3(1, 0, 0);
@@ -173,6 +201,54 @@
 
 	const hullGeometry = makeHullGeometry();
 
+	function createFireEffect() {
+		fireGroup = new THREE.Group();
+		// Central tall flame + 5 outer flames spread over the hull footprint
+		const defs = [
+			{ x: 0, z: 0, h: 3.0, r: 0.32, phase: 0.0 },
+			{ x: 0.8, z: 0.6, h: 1.8, r: 0.22, phase: 1.1 },
+			{ x: -0.8, z: 0.6, h: 1.6, r: 0.20, phase: 2.3 },
+			{ x: 0.7, z: -0.9, h: 2.1, r: 0.26, phase: 0.7 },
+			{ x: -0.7, z: -0.9, h: 1.5, r: 0.19, phase: 1.9 },
+			{ x: 0, z: 0.9, h: 1.4, r: 0.18, phase: 3.1 }
+		];
+		for (const d of defs) {
+			const geo = new THREE.ConeGeometry(d.r, d.h, 6);
+			const col = Math.random() > 0.5 ? '#ff8800' : '#ffcc00';
+			const mat = new THREE.MeshBasicMaterial({
+				color: col,
+				transparent: true,
+				opacity: 0.92,
+				depthWrite: false
+			});
+			const mesh = new THREE.Mesh(geo, mat);
+			mesh.position.set(d.x, d.h / 2, d.z); // pivot cone base at the defined position
+			flames.push({ mesh, phase: d.phase, speed: 5 + Math.random() * 5 });
+			fireGroup.add(mesh);
+		}
+		const light = new THREE.PointLight(0xff6600, 0, 22, 1.5);
+		light.position.set(0, 2.5, 0);
+		fireLightRef = light;
+		fireGroup.add(light);
+		fireGroup.visible = false;
+		threlteScene.add(fireGroup);
+	}
+
+	function updateFireEffect(elapsed: number) {
+		if (!fireGroup) return;
+		fireGroup.position.set(tankPosition.x, tankPosition.y + 1.2, tankPosition.z);
+		for (const f of flames) {
+			const s1 = Math.sin(elapsed * f.speed + f.phase);
+			const s2 = Math.sin(elapsed * f.speed * 1.7 + f.phase + 1.0);
+			f.mesh.scale.y = 0.75 + 0.4 * s1;
+			f.mesh.scale.x = 0.65 + 0.35 * Math.abs(s2);
+			f.mesh.scale.z = 0.65 + 0.35 * Math.abs(s2);
+		}
+		if (fireLightRef) fireLightRef.intensity = 7 * (0.7 + 0.3 * Math.sin(elapsed * 10));
+	}
+
+	createFireEffect();
+
 	const _texLoader = new THREE.TextureLoader();
 	function loadTex(prefix: string, suffix: string, srgb = false): THREE.Texture {
 		const tex = _texLoader.load(`/textures/${prefix}_1K-JPG_${suffix}.jpg`);
@@ -218,6 +294,11 @@
 		barrelMaterial.roughnessMap?.dispose();
 		barrelMaterial.metalnessMap?.dispose();
 		barrelMaterial.dispose();
+		for (const f of flames) {
+			f.mesh.geometry.dispose();
+			(f.mesh.material as THREE.Material).dispose();
+		}
+		if (fireGroup) threlteScene.remove(fireGroup);
 	});
 
 	const handleLightCreate = (ref: THREE.DirectionalLight) => {
@@ -315,7 +396,7 @@
 		dir.applyAxisAngle(_Y_AXIS, tankHeading);
 		dir.multiplyScalar(SHELL_MIN_SPEED + chargeLevel * (SHELL_MAX_SPEED - SHELL_MIN_SPEED));
 
-		onfire?.(muzzle, dir);
+		onfire?.(muzzle, dir, ownBody);
 	}
 
 	// --- Terrain helpers ---
@@ -379,6 +460,32 @@
 
 	// --- Per-frame loop ---
 	useTask((delta) => {
+		// Fully destroyed — nothing to do
+		if (tankDestroyed) return;
+
+		// Shell hit us — start burning
+		if (ownBody.hitAt !== null && !isBurnt) {
+			isBurnt = true;
+			burnElapsed = 0;
+			speed = 0;
+			braking = false;
+			if (fireGroup) fireGroup.visible = true;
+		}
+
+		// Burning state — animate fire, then explode
+		if (isBurnt) {
+			burnElapsed += delta;
+			updateFireEffect(burnElapsed);
+			if (burnElapsed >= TANK_BURN_DURATION) {
+				tankDestroyed = true;
+				isBurnt = false;
+				onexplode?.(tankPosition.clone());
+				if (tankGroupRef) tankGroupRef.visible = false;
+				if (fireGroup) fireGroup.visible = false;
+			}
+			return;
+		}
+
 		// Input — only when grounded
 		let angVel = 0;
 		if (velocityY === 0) {
@@ -478,6 +585,7 @@
 			const fwdZ = -Math.cos(tankHeading);
 			for (const body of tankBodies) {
 				if (body === ownBody) continue;
+				if (body.hitAt !== null) continue; // skip destroyed tanks
 				const dx = newX - body.x;
 				const dz = newZ - body.z;
 				const distSq = dx * dx + dz * dz;
@@ -643,7 +751,13 @@
 	<T.DirectionalLight castShadow intensity={3} oncreate={handleLightCreate} />
 {/if}
 
-<T.Group position={[tankPosition.x, tankPosition.y, tankPosition.z]} rotation.y={tankHeading}>
+<T.Group
+	position={[tankPosition.x, tankPosition.y, tankPosition.z]}
+	rotation.y={tankHeading}
+	oncreate={(ref) => {
+		tankGroupRef = ref as THREE.Group;
+	}}
+>
 	<T.Group rotation.x={tankPitch} rotation.z={tankRoll}>
 		{#each trackSides as tx}
 			<!-- Track belt -->
