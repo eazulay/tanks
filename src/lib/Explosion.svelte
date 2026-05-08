@@ -38,8 +38,16 @@
 	const FIREBALL_DURATION = 0.6;
 	const FIREBALL_MAX_RADIUS = tankExplosion ? 3.5 : 2.5;
 	const GRAVITY = 10;
-	const WATER_DRAG = 0.6;
 	const DEBRIS_COUNT = 10;
+
+	// Water drag: fraction of velocity retained per second while submerged.
+	// Rocks are roughly spherical; panels are flat and catch much more resistance.
+	const ROCK_DRAG_HORIZ = 0.25;
+	const ROCK_DRAG_VERT = 0.50;
+	const ROCK_DRAG_SPIN = 0.20;
+	const PANEL_DRAG_HORIZ = 0.06;
+	const PANEL_DRAG_VERT = 0.30;
+	const PANEL_DRAG_SPIN = 0.06;
 	const DEBRIS_MAX_TIME = 3.5;
 	const raisePerRock = craterDepth / DEBRIS_COUNT;
 
@@ -158,10 +166,15 @@
 				piece.pos.y <= 0 &&
 				getTerrainHeight(piece.pos.x, piece.pos.z) < 0
 			) {
-				const drag = Math.pow(WATER_DRAG, delta);
-				piece.vel.x *= drag;
-				piece.vel.y *= drag;
-				piece.vel.z *= drag;
+				const dH = Math.pow(tankExplosion ? PANEL_DRAG_HORIZ : ROCK_DRAG_HORIZ, delta);
+				const dV = Math.pow(tankExplosion ? PANEL_DRAG_VERT : ROCK_DRAG_VERT, delta);
+				const dS = Math.pow(tankExplosion ? PANEL_DRAG_SPIN : ROCK_DRAG_SPIN, delta);
+				piece.vel.x *= dH;
+				piece.vel.y *= dV;
+				piece.vel.z *= dH;
+				piece.angVel.x *= dS;
+				piece.angVel.y *= dS;
+				piece.angVel.z *= dS;
 			}
 			piece.vel.y -= GRAVITY * delta;
 			piece.pos.x += piece.vel.x * delta;

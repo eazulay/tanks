@@ -141,6 +141,7 @@
 	// Explicit change tracking for onhealthchange — avoids $effect and its reactive dependency on the prop
 	let _lastReportedHealth = -1;
 	let _lastReportedDestroyed = false;
+	let _lastDamageUpdate = -1;
 
 	// Reusable scratch objects to avoid per-frame allocations in useTask and fire()
 	const _X_AXIS = new THREE.Vector3(1, 0, 0);
@@ -222,6 +223,31 @@
 
 	const hullGeometry = makeHullGeometry();
 
+	// Per-face normal-displacement offsets — each of the 6 hull quads (18 values) gets a stable
+	// random push along its face normal so damage looks like crumpled armour plates, not gaps.
+	const posAttr = hullGeometry.getAttribute('position') as THREE.Float32BufferAttribute;
+	const origPos = new Float32Array(posAttr.array);
+	const dentOffsets = (() => {
+		const buf = new Float32Array(origPos.length);
+		const normAttr = hullGeometry.getAttribute('normal') as THREE.Float32BufferAttribute;
+		let s = ownBody.uid >>> 0;
+		for (let q = 0; q < 6; q++) {
+			s = ((Math.imul(s, 1664525) + 1013904223) >>> 0);
+			const d = s / 0xffffffff - 0.5; // [-0.5, 0.5]
+			const base = q * 18;
+			const nx = normAttr.array[base] as number;
+			const ny = normAttr.array[base + 1] as number;
+			const nz = normAttr.array[base + 2] as number;
+			for (let v = 0; v < 6; v++) {
+				const vi = base + v * 3;
+				buf[vi] = nx * d;
+				buf[vi + 1] = ny * d;
+				buf[vi + 2] = nz * d;
+			}
+		}
+		return buf;
+	})();
+
 	const _texLoader = new THREE.TextureLoader();
 	function loadTex(prefix: string, suffix: string, srgb = false): THREE.Texture {
 		const tex = _texLoader.load(`/textures/${prefix}_1K-JPG_${suffix}.jpg`);
@@ -240,7 +266,8 @@
 		roughnessMap: _metalRoughness,
 		metalnessMap: _metalMetalness,
 		metalness: 1.0,
-		roughness: 1.0
+		roughness: 1.0,
+		side: THREE.DoubleSide
 	});
 	const turretMaterial = hullMaterial;
 
@@ -412,6 +439,10 @@
 		hitOffsetX = 0;
 		hitOffsetZ = 0;
 		flameCount = 6;
+		_lastDamageUpdate = -1;
+		(posAttr.array as Float32Array).set(origPos);
+		posAttr.needsUpdate = true;
+		hullGeometry.computeVertexNormals();
 		speed = 0;
 		velocityY = 0;
 		tankHeading = sh;
@@ -442,6 +473,46 @@
 			_lastReportedHealth = health;
 			_lastReportedDestroyed = tankDestroyed;
 			onhealthchange?.(health, tankDestroyed);
+		}
+
+		// Visual damage — panel removal and hull dents accumulate with health loss.
+		// Hull position buffer layout (non-indexed, 6 quads × 6 verts × 3 floats):
+		//   quad 0 top [0..17], quad 1 bottom [18..35], quad 2 front [36..53],
+		//   quad 3 back [54..71], quad 4 left [72..89], quad 5 right [90..107]
+		// Back bottom Y: indices 58, 61, 67. Back bottom Z: 59, 62, 68.
+		// Front bottom Y: indices 43, 49, 52. Front bottom Z: 44, 50, 53.
+		{
+			const damageFraction = 1 - health / TANK_MAX_HEALTH;
+			if (Math.abs(damageFraction - _lastDamageUpdate) > 0.005) {
+				_lastDamageUpdate = damageFraction;
+				const posData = posAttr.array as Float32Array;
+				posData.set(origPos);
+				// Back plate: bottom edge sweeps from BY=0.3 to TY=1.1 as damage goes 25%→75%
+				const backT = Math.max(0, Math.min(0.99, (damageFraction - 0.25) / 0.5));
+				if (backT > 0) {
+					const bY = 0.3 + backT * 0.8;
+					const bZ = 1.35 - backT * 0.15;
+					posData[58] = bY; posData[59] = bZ;
+					posData[61] = bY; posData[62] = bZ;
+					posData[67] = bY; posData[68] = bZ;
+				}
+				// Front plate: same sweep as damage goes 45%→95%
+				const frontT = Math.max(0, Math.min(0.99, (damageFraction - 0.45) / 0.5));
+				if (frontT > 0) {
+					const fY = 0.3 + frontT * 0.8;
+					const fZ = -1.7 + frontT * 0.5;
+					posData[43] = fY; posData[44] = fZ;
+					posData[49] = fY; posData[50] = fZ;
+					posData[52] = fY; posData[53] = fZ;
+				}
+				// Per-face normal dents compound with the panel deformation
+				const dentScale = Math.pow(Math.max(0, (damageFraction - 0.15) / 0.85), 0.8) * 0.15;
+				if (dentScale > 0) {
+					for (let i = 0; i < posData.length; i++) posData[i] += dentOffsets[i] * dentScale;
+				}
+				posAttr.needsUpdate = true;
+				if (backT > 0 || frontT > 0) hullGeometry.computeVertexNormals();
+			}
 		}
 
 		// Fully destroyed — nothing to do
