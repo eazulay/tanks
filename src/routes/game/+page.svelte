@@ -12,7 +12,7 @@
 	}
 	let tankHealthData = $state<TankHealthEntry[]>([]);
 
-	const RELOAD_TIME = 3000;
+	const RELOAD_TIME = 2000;
 	const FIRE_FADE_DURATION = 1000;
 
 	let restartKey = $state(0);
