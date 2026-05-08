@@ -560,7 +560,11 @@
 
 		// Burning state — drain health; explode only if health reaches 0
 		if (burning) {
-			burnElapsed += delta;
+			// Water quenches flames: at full submersion burnElapsed doubles, halving duration and total damage.
+			// Hull top is 1.1 units above tankPosition.y; submersion reaches 1 when hull is fully underwater.
+			const _inWater = getTerrainHeight(tankPosition.x, tankPosition.z) < 0;
+			const _submersion = _inWater ? Math.max(0, Math.min(1, -tankPosition.y / 1.1)) : 0;
+			burnElapsed += delta * (1 + _submersion);
 			health = Math.max(0, health - burnDamageRate * delta);
 			if (health <= 0) {
 				health = 0;
