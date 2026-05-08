@@ -10,6 +10,7 @@
 		tankExplosion = false,
 		debrisColor = '#4a3f38',
 		onrockland,
+		onsheetland,
 		onremove
 	}: {
 		position: THREE.Vector3;
@@ -17,6 +18,17 @@
 		tankExplosion?: boolean;
 		debrisColor?: string;
 		onrockland?: (wx: number, wz: number, amount: number) => void;
+		onsheetland?: (
+			x: number,
+			y: number,
+			z: number,
+			rx: number,
+			ry: number,
+			rz: number,
+			sx: number,
+			sy: number,
+			sz: number
+		) => void;
 		onremove?: () => void;
 	} = $props();
 
@@ -178,6 +190,29 @@
 			if (landed) {
 				piece.done = true;
 				if (piece.mesh) piece.mesh.visible = false;
+				if (tankExplosion && onsheetland) {
+					const px = piece.pos.x, pz = piece.pos.z;
+					const eps = 0.3;
+					const dhdx =
+						(getTerrainHeight(px + eps, pz) - getTerrainHeight(px - eps, pz)) / (2 * eps);
+					const dhdz =
+						(getTerrainHeight(px, pz + eps) - getTerrainHeight(px, pz - eps)) / (2 * eps);
+					const normal = new THREE.Vector3(-dhdx, 1, -dhdz).normalize();
+					// Rotate local Z-axis (thin side) to face terrain normal, then spin randomly
+					const tiltQ = new THREE.Quaternion().setFromUnitVectors(
+						new THREE.Vector3(0, 0, 1),
+						normal
+					);
+					const spinQ = new THREE.Quaternion().setFromAxisAngle(
+						normal,
+						Math.random() * Math.PI * 2
+					);
+					const euler = new THREE.Euler().setFromQuaternion(
+						new THREE.Quaternion().multiplyQuaternions(spinQ, tiltQ)
+					);
+					const py = getTerrainHeight(px, pz) + piece.scaleZ * 0.5;
+					onsheetland(px, py, pz, euler.x, euler.y, euler.z, piece.scaleX, piece.scaleY, piece.scaleZ);
+				}
 			}
 		}
 

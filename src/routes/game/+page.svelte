@@ -86,7 +86,10 @@
 			}
 			if (reloadStart !== null) {
 				reloadProgress = Math.min(1, (now - reloadStart) / RELOAD_TIME);
-				if (reloadProgress >= 1) reloadStart = null;
+				if (reloadProgress >= 1) {
+					reloadStart = null;
+					if (spaceHeld || mouseHeld) startCharge();
+				}
 			}
 			rafId = requestAnimationFrame(tick);
 		}

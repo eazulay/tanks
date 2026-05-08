@@ -183,6 +183,8 @@
 	};
 
 	onDestroy(() => {
+		sheetGeo.dispose();
+		sheetMats.forEach((m) => m.dispose());
 		terrainGeo.dispose();
 		terrainMaterial.dispose();
 		[
@@ -303,6 +305,12 @@
 
 	const CRATER_DEPTH = 0.75;
 
+	function updateSheetPositions() {
+		for (const s of landedSheets) {
+			s.y = getTerrainHeight(s.x, s.z) + s.sz * 0.5;
+		}
+	}
+
 	function deformTerrain(wx: number, wz: number) {
 		const cellSize = WORLD_SIZE / GRID_SEGS;
 		const col = Math.round((wx + WORLD_SIZE / 2) / cellSize);
@@ -317,6 +325,7 @@
 		posAttr.needsUpdate = true;
 		colAttr.needsUpdate = true;
 		terrainGeo.computeVertexNormals();
+		updateSheetPositions();
 	}
 
 	function raiseTerrain(wx: number, wz: number, amount: number) {
@@ -330,6 +339,7 @@
 		posAttr.setY(i, heights[i]);
 		posAttr.needsUpdate = true;
 		terrainGeo.computeVertexNormals();
+		updateSheetPositions();
 	}
 
 	interface TreeSpec {
@@ -384,6 +394,31 @@
 	}
 	let explosions = $state<ExplodeInstance[]>([]);
 	let nextExplodeId = 0;
+
+	interface SheetData {
+		id: number;
+		x: number;
+		y: number;
+		z: number;
+		rx: number;
+		ry: number;
+		rz: number;
+		sx: number;
+		sy: number;
+		sz: number;
+		color: string;
+	}
+	let landedSheets = $state<SheetData[]>([]);
+	let nextSheetId = 0;
+
+	const sheetGeo = new THREE.BoxGeometry(1, 1, 1);
+	const sheetMats = new Map<string, THREE.MeshStandardMaterial>();
+	function getSheetMat(color: string): THREE.MeshStandardMaterial {
+		if (!sheetMats.has(color)) {
+			sheetMats.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.8 }));
+		}
+		return sheetMats.get(color)!;
+	}
 
 	const IGNITION_RADIUS = 10;
 	const SPLASH_RADIUS = 5; // explosion splash damage radius for nearby tanks
@@ -552,6 +587,7 @@
 
 		shells = [];
 		explosions = [];
+		landedSheets = [];
 		tankRef?.reset(newSpawns[0].x, newSpawns[0].z, newSpawns[0].heading);
 	}
 
@@ -633,7 +669,25 @@
 		tankExplosion={e.tankExplosion}
 		debrisColor={e.color}
 		onrockland={raiseTerrain}
+		onsheetland={(x, y, z, rx, ry, rz, sx, sy, sz) => {
+			landedSheets.push({
+				id: nextSheetId++,
+				x, y, z, rx, ry, rz, sx, sy, sz,
+				color: e.color ?? '#4a3f38'
+			});
+		}}
 		onremove={() => removeExplosion(e.id)}
+	/>
+{/each}
+
+{#each landedSheets as s (s.id)}
+	<T.Mesh
+		geometry={sheetGeo}
+		material={getSheetMat(s.color)}
+		position={[s.x, s.y, s.z]}
+		rotation={[s.rx, s.ry, s.rz]}
+		scale={[s.sx, s.sy, s.sz]}
+		receiveShadow
 	/>
 {/each}
 
