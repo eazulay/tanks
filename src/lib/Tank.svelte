@@ -232,7 +232,7 @@
 		const normAttr = hullGeometry.getAttribute('normal') as THREE.Float32BufferAttribute;
 		let s = ownBody.uid >>> 0;
 		for (let q = 0; q < 6; q++) {
-			s = ((Math.imul(s, 1664525) + 1013904223) >>> 0);
+			s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
 			const d = s / 0xffffffff - 0.5; // [-0.5, 0.5]
 			const base = q * 18;
 			const nx = normAttr.array[base] as number;
@@ -492,18 +492,24 @@
 				if (backT > 0) {
 					const bY = 0.3 + backT * 0.8;
 					const bZ = 1.35 - backT * 0.15;
-					posData[58] = bY; posData[59] = bZ;
-					posData[61] = bY; posData[62] = bZ;
-					posData[67] = bY; posData[68] = bZ;
+					posData[58] = bY;
+					posData[59] = bZ;
+					posData[61] = bY;
+					posData[62] = bZ;
+					posData[67] = bY;
+					posData[68] = bZ;
 				}
 				// Front plate: same sweep as damage goes 45%→95%
 				const frontT = Math.max(0, Math.min(0.99, (damageFraction - 0.45) / 0.5));
 				if (frontT > 0) {
 					const fY = 0.3 + frontT * 0.8;
 					const fZ = -1.7 + frontT * 0.5;
-					posData[43] = fY; posData[44] = fZ;
-					posData[49] = fY; posData[50] = fZ;
-					posData[52] = fY; posData[53] = fZ;
+					posData[43] = fY;
+					posData[44] = fZ;
+					posData[49] = fY;
+					posData[50] = fZ;
+					posData[52] = fY;
+					posData[53] = fZ;
 				}
 				// Per-face normal dents compound with the panel deformation
 				const dentScale = Math.pow(Math.max(0, (damageFraction - 0.15) / 0.85), 0.8) * 0.15;
@@ -538,7 +544,8 @@
 			} else {
 				// Direct body hit — 2 flames minimum so edge hits are visually distinct from splash
 				const hitFraction = 1 - Math.min(1, dist / HIT_RADIUS);
-				burnDuration = EDGE_BURN_DURATION + hitFraction * (CENTER_BURN_DURATION - EDGE_BURN_DURATION);
+				burnDuration =
+					EDGE_BURN_DURATION + hitFraction * (CENTER_BURN_DURATION - EDGE_BURN_DURATION);
 				const totalDamage = EDGE_HIT_DAMAGE + hitFraction * (CENTER_HIT_DAMAGE - EDGE_HIT_DAMAGE);
 				burnDamageRate = totalDamage / burnDuration;
 				hitOffsetX = Math.max(-1.5, Math.min(1.5, wx - tankPosition.x));
@@ -686,7 +693,7 @@
 					const vDotN = speed * fwdDotN;
 					if (vDotN < 0) {
 						// Impulse magnitude transferred to B (equal-mass collision formula)
-						const impulse = ((1 + COLLISION_RESTITUTION) / 2) * (-vDotN);
+						const impulse = ((1 + COLLISION_RESTITUTION) / 2) * -vDotN;
 						// Push B in the direction A is moving (−n = toward B from A)
 						body.pushVx -= nx * impulse;
 						body.pushVz -= nz * impulse;
@@ -757,8 +764,12 @@
 			const elevFraction = Math.sin(barrelElevation);
 			const targetCamX = tankPosition.x + Math.sin(absHeading) * CAMERA_BEHIND;
 			const targetCamZ = tankPosition.z + Math.cos(absHeading) * CAMERA_BEHIND;
+			// World-space barrel pitch: cos(turretHeading) inverts the slope contribution when
+			// the barrel faces backward, so both "forward+downhill" and "backward+uphill" cases work.
+			const worldBarrelPitch = barrelElevation + Math.cos(turretHeading) * tankPitch;
+			const barrelDownLift = Math.max(0, -worldBarrelPitch) * CAMERA_BEHIND * 2;
 			const targetCamY = Math.max(
-				tankPosition.y + CAMERA_HEIGHT,
+				tankPosition.y + CAMERA_HEIGHT + barrelDownLift,
 				getTerrainHeight(targetCamX, targetCamZ) + CAMERA_HEIGHT
 			);
 			cameraPosition = new THREE.Vector3(
