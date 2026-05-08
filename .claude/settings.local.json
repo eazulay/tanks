@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm run *)",
       "Bash(npx prettier *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "PowerShell(npm run *)"
     ]
   }
 }

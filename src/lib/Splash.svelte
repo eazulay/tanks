@@ -21,6 +21,7 @@
 				transparent: true,
 				opacity: 0,
 				depthWrite: false,
+				depthTest: false,
 				side: THREE.DoubleSide
 			})
 	);
@@ -82,7 +83,8 @@
 		geometry={geos[i]}
 		material={mats[i]}
 		rotation.x={-Math.PI / 2}
-		position={[x, 0.05, z]}
+		position={[x, 0, z]}
+		renderOrder={1}
 		visible={false}
 	/>
 {/each}

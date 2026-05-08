@@ -7,11 +7,15 @@
 	let {
 		position,
 		craterDepth = 0.6,
+		tankExplosion = false,
+		debrisColor = '#4a3f38',
 		onrockland,
 		onremove
 	}: {
 		position: THREE.Vector3;
 		craterDepth?: number;
+		tankExplosion?: boolean;
+		debrisColor?: string;
 		onrockland?: (wx: number, wz: number, amount: number) => void;
 		onremove?: () => void;
 	} = $props();
@@ -20,27 +24,26 @@
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
 
 	const FIREBALL_DURATION = 0.6;
-	const FIREBALL_MAX_RADIUS = 2.5;
+	const FIREBALL_MAX_RADIUS = tankExplosion ? 3.5 : 2.5;
 	const GRAVITY = 10;
-	const WATER_DRAG = 0.6; // fraction of velocity remaining after 1 s underwater
-	const ROCK_COUNT = 10;
-	const ROCK_MAX_TIME = 3.5;
-	const raisePerRock = craterDepth / ROCK_COUNT;
+	const WATER_DRAG = 0.6;
+	const DEBRIS_COUNT = 10;
+	const DEBRIS_MAX_TIME = 3.5;
+	const raisePerRock = craterDepth / DEBRIS_COUNT;
 
-	// Created in script so opacity can be mutated per-frame
 	const fireballGeo = new THREE.SphereGeometry(1, 16, 12);
 	const fireballMat = new THREE.MeshBasicMaterial({ color: '#ff6600', transparent: true });
 	let fireballRef: THREE.Mesh | null = null;
 
-	// Shared across all rock meshes
-	const rockGeo = new THREE.IcosahedronGeometry(1, 0);
-	const rockMat = new THREE.MeshStandardMaterial({
-		color: '#7a6050',
-		roughness: 0.9,
-		metalness: 0
-	});
+	// Geometry and material differ by explosion type
+	const debrisGeo = tankExplosion
+		? new THREE.BoxGeometry(1, 1, 1)
+		: new THREE.IcosahedronGeometry(1, 0);
+	const debrisMat = tankExplosion
+		? new THREE.MeshStandardMaterial({ color: debrisColor, roughness: 0.5, metalness: 0.8 })
+		: new THREE.MeshStandardMaterial({ color: '#7a6050', roughness: 0.9, metalness: 0 });
 
-	interface Rock {
+	interface Debris {
 		mesh: THREE.Mesh | null;
 		pos: THREE.Vector3;
 		prevY: number;
@@ -54,11 +57,25 @@
 		done: boolean;
 	}
 
-	const rocks: Rock[] = Array.from({ length: ROCK_COUNT }, () => {
+	const debris: Debris[] = Array.from({ length: DEBRIS_COUNT }, () => {
 		const azimuth = Math.random() * Math.PI * 2;
 		const elev = Math.random() * Math.PI * 0.55 + 0.08;
-		const speed = 4 + Math.random() * 16;
-		const size = 0.04 + Math.random() * 0.14;
+		const speed = tankExplosion ? 7 + Math.random() * 18 : 4 + Math.random() * 16;
+		const angSpeed = tankExplosion ? 20 : 12;
+
+		let scaleX: number, scaleY: number, scaleZ: number;
+		if (tankExplosion) {
+			// Thin rectangular sheets — wide and tall, very thin in Z
+			scaleX = 0.30 + Math.random() * 0.50;
+			scaleY = 0.20 + Math.random() * 0.40;
+			scaleZ = 0.03 + Math.random() * 0.02;
+		} else {
+			const size = 0.04 + Math.random() * 0.14;
+			scaleX = size * (0.6 + Math.random() * 0.8);
+			scaleY = size * (0.6 + Math.random() * 0.8);
+			scaleZ = size * (0.6 + Math.random() * 0.8);
+		}
+
 		return {
 			mesh: null,
 			pos: position.clone(),
@@ -69,13 +86,13 @@
 				Math.sin(azimuth) * Math.cos(elev) * speed
 			),
 			angVel: new THREE.Vector3(
-				(Math.random() - 0.5) * 12,
-				(Math.random() - 0.5) * 12,
-				(Math.random() - 0.5) * 12
+				(Math.random() - 0.5) * angSpeed,
+				(Math.random() - 0.5) * angSpeed,
+				(Math.random() - 0.5) * angSpeed
 			),
-			scaleX: size * (0.6 + Math.random() * 0.8),
-			scaleY: size * (0.6 + Math.random() * 0.8),
-			scaleZ: size * (0.6 + Math.random() * 0.8),
+			scaleX,
+			scaleY,
+			scaleZ,
 			initRotX: Math.random() * Math.PI * 2,
 			initRotY: Math.random() * Math.PI * 2,
 			done: false
@@ -99,8 +116,8 @@
 	onDestroy(() => {
 		fireballGeo.dispose();
 		fireballMat.dispose();
-		rockGeo.dispose();
-		rockMat.dispose();
+		debrisGeo.dispose();
+		debrisMat.dispose();
 	});
 
 	const { stop } = useTask((delta) => {
@@ -117,54 +134,54 @@
 			}
 		}
 
-		// Rocks: ballistic physics + spin, land on actual terrain surface
+		// Debris: ballistic physics + spin, land on actual terrain surface
 		const ft = Math.min(elapsed / FIREBALL_DURATION, 1);
-		let allRocksDone = true;
-		for (const rock of rocks) {
-			if (rock.done) continue;
-			allRocksDone = false;
-			const prevY = rock.prevY;
+		let allDebrisDone = true;
+		for (const piece of debris) {
+			if (piece.done) continue;
+			allDebrisDone = false;
+			const prevY = piece.prevY;
 			if (
-				isInBounds(rock.pos.x, rock.pos.z) &&
-				rock.pos.y <= 0 &&
-				getTerrainHeight(rock.pos.x, rock.pos.z) < 0
+				isInBounds(piece.pos.x, piece.pos.z) &&
+				piece.pos.y <= 0 &&
+				getTerrainHeight(piece.pos.x, piece.pos.z) < 0
 			) {
 				const drag = Math.pow(WATER_DRAG, delta);
-				rock.vel.x *= drag;
-				rock.vel.y *= drag;
-				rock.vel.z *= drag;
+				piece.vel.x *= drag;
+				piece.vel.y *= drag;
+				piece.vel.z *= drag;
 			}
-			rock.vel.y -= GRAVITY * delta;
-			rock.pos.x += rock.vel.x * delta;
-			rock.pos.y += rock.vel.y * delta;
-			rock.pos.z += rock.vel.z * delta;
-			rock.prevY = rock.pos.y;
-			if (rock.mesh) {
-				rock.mesh.position.copy(rock.pos);
-				rock.mesh.rotation.x += rock.angVel.x * delta;
-				rock.mesh.rotation.y += rock.angVel.y * delta;
-				rock.mesh.rotation.z += rock.angVel.z * delta;
+			piece.vel.y -= GRAVITY * delta;
+			piece.pos.x += piece.vel.x * delta;
+			piece.pos.y += piece.vel.y * delta;
+			piece.pos.z += piece.vel.z * delta;
+			piece.prevY = piece.pos.y;
+			if (piece.mesh) {
+				piece.mesh.position.copy(piece.pos);
+				piece.mesh.rotation.x += piece.angVel.x * delta;
+				piece.mesh.rotation.y += piece.angVel.y * delta;
+				piece.mesh.rotation.z += piece.angVel.z * delta;
 			}
-			let landed = elapsed > ROCK_MAX_TIME;
-			if (!landed && elapsed > 0.15 && isInBounds(rock.pos.x, rock.pos.z)) {
-				// Splash when crossing the water surface (y=0) in a water area
-				if (getTerrainHeight(rock.pos.x, rock.pos.z) < 0) {
-					if ((prevY > 0 && rock.pos.y <= 0) || (prevY <= 0 && rock.pos.y > 0)) {
-						splashes.push({ id: nextSplashId++, x: rock.pos.x, z: rock.pos.z });
+			let landed = elapsed > DEBRIS_MAX_TIME;
+			if (!landed && elapsed > 0.15 && isInBounds(piece.pos.x, piece.pos.z)) {
+				if (getTerrainHeight(piece.pos.x, piece.pos.z) < 0) {
+					if ((prevY > 0 && piece.pos.y <= 0) || (prevY <= 0 && piece.pos.y > 0)) {
+						splashes.push({ id: nextSplashId++, x: piece.pos.x, z: piece.pos.z });
 					}
 				}
-				if (rock.pos.y <= getTerrainHeight(rock.pos.x, rock.pos.z)) {
+				if (piece.pos.y <= getTerrainHeight(piece.pos.x, piece.pos.z)) {
 					landed = true;
-					onrockland?.(rock.pos.x, rock.pos.z, raisePerRock);
+					// Metal sheets don't fill a crater — only terrain rocks do
+					if (!tankExplosion) onrockland?.(piece.pos.x, piece.pos.z, raisePerRock);
 				}
 			}
 			if (landed) {
-				rock.done = true;
-				if (rock.mesh) rock.mesh.visible = false;
+				piece.done = true;
+				if (piece.mesh) piece.mesh.visible = false;
 			}
 		}
 
-		if (ft >= 1 && allRocksDone && splashes.length === 0) {
+		if (ft >= 1 && allDebrisDone && splashes.length === 0) {
 			stop();
 			onremove?.();
 		}
@@ -180,16 +197,16 @@
 	position={[position.x, position.y, position.z]}
 />
 
-{#each rocks as rock}
+{#each debris as piece}
 	<T.Mesh
 		oncreate={(ref) => {
-			rock.mesh = ref;
+			piece.mesh = ref;
 		}}
-		geometry={rockGeo}
-		material={rockMat}
-		position={[rock.pos.x, rock.pos.y, rock.pos.z]}
-		rotation={[rock.initRotX, rock.initRotY, 0]}
-		scale={[rock.scaleX, rock.scaleY, rock.scaleZ]}
+		geometry={debrisGeo}
+		material={debrisMat}
+		position={[piece.pos.x, piece.pos.y, piece.pos.z]}
+		rotation={[piece.initRotX, piece.initRotY, 0]}
+		scale={[piece.scaleX, piece.scaleY, piece.scaleZ]}
 		castShadow
 	/>
 {/each}

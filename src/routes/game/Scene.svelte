@@ -379,6 +379,8 @@
 	interface ExplodeInstance {
 		id: number;
 		position: THREE.Vector3;
+		tankExplosion: boolean;
+		color?: string;
 	}
 	let explosions = $state<ExplodeInstance[]>([]);
 	let nextExplodeId = 0;
@@ -406,7 +408,7 @@
 			}
 		}
 		const id = nextExplodeId++;
-		explosions.push({ id, position });
+		explosions.push({ id, position, tankExplosion: false });
 		if (tracked) {
 			trackedExplosionId = id;
 			shellFollow.pos = position.clone();
@@ -422,7 +424,7 @@
 		}
 	}
 
-	function handleTankExplosion(position: THREE.Vector3) {
+	function handleTankExplosion(position: THREE.Vector3, color: string) {
 		deformTerrain(position.x, position.z);
 		const now = Date.now();
 		for (const t of trees) {
@@ -431,7 +433,7 @@
 			const dz = t.z - position.z;
 			if (dx * dx + dz * dz < IGNITION_RADIUS * IGNITION_RADIUS) t.burntAt = now;
 		}
-		explosions.push({ id: nextExplodeId++, position });
+		explosions.push({ id: nextExplodeId++, position, tankExplosion: true, color });
 	}
 
 	let spawnPositions = $state<{ x: number; z: number; heading: number }[]>([]);
@@ -628,6 +630,8 @@
 	<Explosion
 		position={e.position}
 		craterDepth={CRATER_DEPTH}
+		tankExplosion={e.tankExplosion}
+		debrisColor={e.color}
 		onrockland={raiseTerrain}
 		onremove={() => removeExplosion(e.id)}
 	/>

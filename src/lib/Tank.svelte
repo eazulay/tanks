@@ -16,7 +16,7 @@
 		onfire = undefined as
 			| ((position: THREE.Vector3, velocity: THREE.Vector3, firingBodyUid: number) => void)
 			| undefined,
-		onexplode = undefined as ((position: THREE.Vector3) => void) | undefined,
+		onexplode = undefined as ((position: THREE.Vector3, color: string) => void) | undefined,
 		onhealthchange = undefined as ((health: number, destroyed: boolean) => void) | undefined
 	} = $props();
 
@@ -489,7 +489,7 @@
 				burning = false;
 				tankDestroyed = true;
 				ownBody.hitAt = Date.now();
-				onexplode?.(tankPosition.clone());
+				onexplode?.(tankPosition.clone(), tankColor);
 				if (tankGroupRef) tankGroupRef.visible = false;
 				return;
 			}
