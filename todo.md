@@ -1,8 +1,3 @@
 **TO DO**
 
-- When only one tank remains the game is over. When the game ends:
-  - the window showing keyboard controls should shrink to only show two buttons: Restart and Quit.
-  - Big text in the centre of the screen, "Game Over", or "You Won".
-  - If mouse has control, it should relinquish it.
-  - The camera should start lifting, looking down, until it reaches the height from which the entire terrain is visible. This movement should take 30 seconds in total.
-  - If the user's tank still exists, keyboard control should still work but without the camera behind it.
+- When the barrel goes down, the camera goes high so that the user can always see the barrel. But this should be only when it goes downhill. I don't think that's what's hapenning because if the tank stands sideways on a slope and I turn the barrel 90 so it faces downhill, I still cannot see the barrel, so the camera isn't rising, or at least not not high enough.

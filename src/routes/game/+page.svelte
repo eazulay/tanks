@@ -29,8 +29,22 @@
 	let reloadProgress = $state(1);
 	let reloadStart = $state<number | null>(null);
 
+	let gameOver = $derived(
+		tankHealthData.length > 0 &&
+			(tankHealthData[0]?.destroyed ||
+				tankHealthData.filter((d) => !d.destroyed).length <= 1)
+	);
+	let playerWon = $derived(gameOver && !tankHealthData[0]?.destroyed);
+
+	function restartGame() {
+		restartKey++;
+		resetCharge();
+		reloadStart = null;
+		reloadProgress = 1;
+	}
+
 	function startCharge() {
-		if (chargeStart === null && fadeStart === null && reloadProgress >= 1) {
+		if (chargeStart === null && fadeStart === null && reloadProgress >= 1 && !gameOver) {
 			chargeStart = performance.now();
 			chargeVisible = true;
 			chargeFull = false;
@@ -106,12 +120,6 @@
 			}
 		};
 		const onKeyDown = (e: KeyboardEvent) => {
-			if (e.code === 'KeyR') {
-				restartKey++;
-				resetCharge();
-				reloadStart = null;
-				reloadProgress = 1;
-			}
 			if (e.code === 'Space' && !spaceHeld) {
 				e.preventDefault();
 				spaceHeld = true;
@@ -151,12 +159,18 @@
 			window.removeEventListener('mouseup', onMouseUp);
 		};
 	});
+
+	$effect(() => {
+		if (gameOver && document.pointerLockElement !== null) {
+			document.exitPointerLock();
+		}
+	});
 </script>
 
 <div class="game-container">
 	<Canvas shadows>
 		{#key restartKey}
-			<Scene {opponentCount} bind:tankHealthData />
+			<Scene {opponentCount} bind:tankHealthData {gameOver} />
 		{/key}
 	</Canvas>
 
@@ -179,21 +193,36 @@
 		{/if}
 	{/if}
 
-	{#if chargeVisible}
+	{#if gameOver}
+		<div class="gameover-text" class:won={playerWon}>
+			{playerWon ? 'You Won' : 'Game Over'}
+		</div>
+	{/if}
+
+	{#if chargeVisible && !gameOver}
 		<div class="charge-wrap" style="opacity: {chargeOpacity}">
 			<div class="charge-bar" class:full={chargeLevel >= 1 && fadeStart === null} style="width: {chargeLevel * 100}%"></div>
 			<span class="charge-label">Velocity</span>
 		</div>
 	{/if}
 
-	{#if reloadStart !== null}
+	{#if reloadStart !== null && !gameOver}
 		<div class="reload-wrap">
 			<div class="reload-bar" style="width: {(1 - reloadProgress) * 100}%"></div>
 			<span class="reload-label">Reloading</span>
 		</div>
 	{/if}
 
-	{#if locked}
+	{#if gameOver}
+		<div class="overlay">
+			<div class="panel">
+				<div class="buttons">
+					<button onclick={restartGame}>Restart</button>
+					<a href="/" class="button">Quit</a>
+				</div>
+			</div>
+		</div>
+	{:else if locked}
 		<div class="overlay">
 			<p class="hint">
 				WASD · drive &nbsp;|&nbsp; X · stop &nbsp;|&nbsp; Mouse / arrows · aim &nbsp;|&nbsp; Z · zoom
@@ -218,7 +247,7 @@
 							onclick={() => document.documentElement.requestPointerLock()}
 							>Mouse Control</button
 						>
-						<button onclick={() => restartKey++}>Restart (R)</button>
+						<button onclick={restartGame}>Restart</button>
 						<a href="/" class="button">Quit</a>
 					</div>
 				</div>
@@ -232,6 +261,28 @@
 		position: relative;
 		width: 100%;
 		height: 100svh;
+	}
+
+	.gameover-text {
+		position: absolute;
+		top: 38%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		font-size: 5rem;
+		font-weight: 700;
+		color: #ffb0b0;
+		text-shadow:
+			0 0 40px rgba(0, 0, 0, 0.9),
+			0 4px 12px rgba(0, 0, 0, 0.7);
+		pointer-events: none;
+		z-index: 30;
+		letter-spacing: 0.06em;
+		text-align: center;
+		user-select: none;
+	}
+
+	.gameover-text.won {
+		color: #b8ffaa;
 	}
 
 	.player-health {

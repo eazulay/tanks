@@ -15,10 +15,12 @@
 
 	let {
 		opponentCount = 1,
-		tankHealthData = $bindable<TankHealthEntry[]>([])
+		tankHealthData = $bindable<TankHealthEntry[]>([]),
+		gameOver = false
 	}: {
 		opponentCount?: number;
 		tankHealthData?: TankHealthEntry[];
+		gameOver?: boolean;
 	} = $props();
 
 	const { scene } = useThrelte();
@@ -626,6 +628,7 @@
 <Tank
 	controlled
 	chaseCamera
+	{gameOver}
 	tankColor={TANK_COLORS[0]}
 	spawnX={spawnPositions[0]?.x ?? 0}
 	spawnZ={spawnPositions[0]?.z ?? 0}

@@ -9,6 +9,7 @@
 	let {
 		controlled = false,
 		chaseCamera = false,
+		gameOver = false,
 		spawnX = 0,
 		spawnZ = 0,
 		spawnHeading = 0,
@@ -116,6 +117,14 @@
 	let nextWakeId = 0;
 	let wakeTimer = 0;
 
+	const GAME_OVER_LIFT_DURATION = 30; // seconds to reach overview height
+	// At H=800, vertical visible span ≈ 746 units (FOV 50°) — covers the 750-unit terrain
+	// without showing the water margin on the shorter (vertical) screen dimension.
+	const OVERVIEW_HEIGHT = 800;
+	let gameOverCamElapsed = 0;
+	let gameOverCamStartPos: THREE.Vector3 | null = null;
+	let gameOverCamStartQuat: THREE.Quaternion | null = null;
+
 	const LIGHT_OFFSET = new THREE.Vector3(-50, 50, 30);
 	const SHADOW_HALF = 50;
 
@@ -147,6 +156,16 @@
 	const _X_AXIS = new THREE.Vector3(1, 0, 0);
 	const _Y_AXIS = new THREE.Vector3(0, 1, 0);
 	const _scratchEuler = new THREE.Euler(0, 0, 0, 'XYZ');
+	const _scratchQuat = new THREE.Quaternion();
+	// Target camera orientation for game-over overview: looking straight down, east (+X) pointing up-screen.
+	// Computed once via a dummy camera to avoid manual quaternion math.
+	const _GAME_OVER_END_QUAT = (() => {
+		const dummy = new THREE.PerspectiveCamera();
+		dummy.up.set(1, 0, 0);
+		dummy.position.set(0, 1, 0);
+		dummy.lookAt(0, 0, 0);
+		return dummy.quaternion.clone();
+	})();
 
 	// Custom hull geometry: trapezoidal prism, bottom wider than top.
 	// Front slopes more than back so front/back are visually distinct.
@@ -521,6 +540,37 @@
 			}
 		}
 
+		// Game-over camera — lifts to overview, runs even when this tank is destroyed.
+		// Uses quaternion SLERP so orientation rotates smoothly from tank-following to top-down
+		// rather than staying locked to the tank heading and snapping at the end.
+		if (chaseCamera && gameOver) {
+			if (gameOverCamStartPos === null) {
+				gameOverCamStartPos = cameraPosition.clone();
+				gameOverCamStartQuat =
+					(cameraRef as THREE.PerspectiveCamera | null)?.quaternion.clone() ?? null;
+			}
+			gameOverCamElapsed += delta;
+			const t = Math.min(1, gameOverCamElapsed / GAME_OVER_LIFT_DURATION);
+			const eased = 1 - Math.pow(1 - t, 2);
+			// Orientation reaches top-down within 5 s; position lifts over the full 30 s
+			const tRot = Math.min(1, gameOverCamElapsed / 5);
+			const easedRot = 1 - Math.pow(1 - tRot, 2);
+			cameraPosition = new THREE.Vector3(
+				gameOverCamStartPos.x * (1 - eased),
+				gameOverCamStartPos.y + (OVERVIEW_HEIGHT - gameOverCamStartPos.y) * eased,
+				gameOverCamStartPos.z * (1 - eased)
+			);
+			if (cameraRef && gameOverCamStartQuat) {
+				_scratchQuat.slerpQuaternions(gameOverCamStartQuat, _GAME_OVER_END_QUAT, easedRot);
+				(cameraRef as THREE.PerspectiveCamera).quaternion.copy(_scratchQuat);
+			}
+			currentFov += (NORMAL_FOV - currentFov) * Math.min(1, ZOOM_FOV_LERP * delta);
+			if (cameraRef) {
+				(cameraRef as THREE.PerspectiveCamera).fov = currentFov;
+				(cameraRef as THREE.PerspectiveCamera).updateProjectionMatrix();
+			}
+		}
+
 		// Fully destroyed — nothing to do
 		if (tankDestroyed) return;
 
@@ -762,7 +812,7 @@
 		}
 
 		// Camera — follows behind the barrel direction (turret heading relative to hull)
-		if (chaseCamera) {
+		if (chaseCamera && !gameOver) {
 			const t = Math.min(1, CHASE_LERP * delta);
 			const absHeading = tankHeading + turretHeading;
 			const elevFraction = Math.sin(barrelElevation);
