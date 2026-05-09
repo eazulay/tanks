@@ -3,7 +3,10 @@
 	import Scene from './Scene.svelte';
 	import { page } from '$app/state';
 
-	const opponentCount = Math.min(3, Math.max(1, parseInt(page.url.searchParams.get('opponents') ?? '1', 10)));
+	const opponentCount = Math.min(
+		3,
+		Math.max(1, parseInt(page.url.searchParams.get('opponents') ?? '1', 10))
+	);
 
 	interface TankHealthEntry {
 		health: number;
@@ -31,8 +34,7 @@
 
 	let gameOver = $derived(
 		tankHealthData.length > 0 &&
-			(tankHealthData[0]?.destroyed ||
-				tankHealthData.filter((d) => !d.destroyed).length <= 1)
+			(tankHealthData[0]?.destroyed || tankHealthData.filter((d) => !d.destroyed).length <= 1)
 	);
 	let playerWon = $derived(gameOver && !tankHealthData[0]?.destroyed);
 
@@ -178,7 +180,11 @@
 		{#if tankHealthData[0]}
 			<div class="player-health">
 				<div class="vbar" class:dead={tankHealthData[0].destroyed}>
-					<div class="vfill" style="height:{Math.max(0, tankHealthData[0].health)}%;background:{tankHealthData[0].color}"></div>
+					<div
+						class="vfill"
+						style="height:{Math.max(0, tankHealthData[0].health)}%;background:{tankHealthData[0]
+							.color}"
+					></div>
 				</div>
 			</div>
 		{/if}
@@ -201,7 +207,11 @@
 
 	{#if chargeVisible && !gameOver}
 		<div class="charge-wrap" style="opacity: {chargeOpacity}">
-			<div class="charge-bar" class:full={chargeLevel >= 1 && fadeStart === null} style="width: {chargeLevel * 100}%"></div>
+			<div
+				class="charge-bar"
+				class:full={chargeLevel >= 1 && fadeStart === null}
+				style="width: {chargeLevel * 100}%"
+			></div>
 			<span class="charge-label">Velocity</span>
 		</div>
 	{/if}
@@ -225,8 +235,9 @@
 	{:else if locked}
 		<div class="overlay">
 			<p class="hint">
-				WASD · drive &nbsp;|&nbsp; X · stop &nbsp;|&nbsp; Mouse / arrows · aim &nbsp;|&nbsp; Z · zoom
-				&nbsp;|&nbsp; Hold LMB / Space · charge, release · fire &nbsp;|&nbsp; Esc · release mouse
+				WASD · drive &nbsp;|&nbsp; X · stop &nbsp;|&nbsp; Mouse / arrows · aim &nbsp;|&nbsp; Z ·
+				zoom &nbsp;|&nbsp; Hold LMB / Space · charge, release · fire &nbsp;|&nbsp; Esc · release
+				mouse
 			</p>
 		</div>
 	{:else}
@@ -237,14 +248,12 @@
 						<li>WASD · drive</li>
 						<li>X · stop</li>
 						<li>Mouse / arrows · aim</li>
-						<li>Z · zoom (4× finer aim)</li>
+						<li>Z · zoom (5× finer aim)</li>
 						<li>Hold LMB / Space · charge, release · fire</li>
 						<li>Esc · release mouse</li>
 					</ul>
 					<div class="buttons">
-						<button
-							class="green-btn"
-							onclick={() => document.documentElement.requestPointerLock()}
+						<button class="green-btn" onclick={() => document.documentElement.requestPointerLock()}
 							>Mouse Control</button
 						>
 						<button onclick={restartGame}>Restart</button>
@@ -361,7 +370,9 @@
 		font-weight: 600;
 		letter-spacing: 0.08em;
 		color: #eee;
-		text-shadow: 0 0 4px #000, 0 0 2px #000;
+		text-shadow:
+			0 0 4px #000,
+			0 0 2px #000;
 		text-transform: uppercase;
 	}
 
@@ -403,7 +414,9 @@
 		font-weight: 600;
 		letter-spacing: 0.08em;
 		color: #eee;
-		text-shadow: 0 0 4px #000, 0 0 2px #000;
+		text-shadow:
+			0 0 4px #000,
+			0 0 2px #000;
 		text-transform: uppercase;
 	}
 
