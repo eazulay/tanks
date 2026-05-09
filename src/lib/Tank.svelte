@@ -818,9 +818,10 @@
 			const elevFraction = Math.sin(barrelElevation);
 			const targetCamX = tankPosition.x + Math.sin(absHeading) * CAMERA_BEHIND;
 			const targetCamZ = tankPosition.z + Math.cos(absHeading) * CAMERA_BEHIND;
-			// World-space barrel pitch: cos(turretHeading) inverts the slope contribution when
-			// the barrel faces backward, so both "forward+downhill" and "backward+uphill" cases work.
-			const worldBarrelPitch = barrelElevation + Math.cos(turretHeading) * tankPitch;
+			// World-space barrel pitch: project tank tilt onto the barrel's azimuth direction.
+			// cos(th)*pitch handles forward/backward facing; sin(th)*roll handles sideways facing.
+			const worldBarrelPitch =
+				barrelElevation + Math.cos(turretHeading) * tankPitch - Math.sin(turretHeading) * tankRoll;
 			const barrelDownLift = Math.max(0, -worldBarrelPitch) * CAMERA_BEHIND * 2;
 			const targetCamY = Math.max(
 				tankPosition.y + CAMERA_HEIGHT + barrelDownLift,
