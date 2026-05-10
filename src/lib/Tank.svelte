@@ -905,6 +905,15 @@
 							if (hDelta > 0.12) leftHeld = true;
 							else if (hDelta < -0.12) rightHeld = true;
 							upHeld = true;
+							// Always track turret geometrically toward the target during escape,
+							// regardless of whether the ballistic solver succeeds.
+							// This runs before the canHit block so the turret is never left
+							// pointing wherever the cooldown happened to leave it.
+							const escapeTurretH = normalizeAngle(Math.atan2(-edx, -edz) - tankHeading);
+							const escapeTDelta = normalizeAngle(escapeTurretH - turretHeading);
+							turretHeading +=
+								Math.sign(escapeTDelta) *
+								Math.min(Math.abs(escapeTDelta), TURRET_SPEED * delta);
 						} else {
 							// Good range — find flat ground, then stop and fire.
 							// On a sloped platform the barrel's world-space elevation differs from

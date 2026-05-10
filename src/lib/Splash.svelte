@@ -13,7 +13,9 @@
 
 	// One geometry per ring, updated in-place each frame so ring width stays constant.
 	// Sharing one geometry across rings is not possible — each has a different radius.
-	const geos = SPLASH_DELAYS.map(() => new THREE.RingGeometry(0.001, SPLASH_RING_WIDTH, THETA_SEGS));
+	const geos = SPLASH_DELAYS.map(
+		() => new THREE.RingGeometry(0.001, SPLASH_RING_WIDTH, THETA_SEGS)
+	);
 	const mats = SPLASH_DELAYS.map(
 		() =>
 			new THREE.MeshBasicMaterial({
