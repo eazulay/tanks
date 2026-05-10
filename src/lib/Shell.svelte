@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
 	import { T, useTask } from '@threlte/core';
+	import { PositionalAudio } from '@threlte/extras';
 	import { getContext, onDestroy } from 'svelte';
 	import Splash from './Splash.svelte';
 	import type { TankBody } from './types';
@@ -29,17 +30,7 @@
 	const forNearbyTreeVolumes = getContext<
 		(x: number, z: number, fn: (vol: TreeVol) => boolean) => void
 	>('forNearbyTreeVolumes');
-	const audioListener = getContext<THREE.AudioListener>('audioListener') ?? null;
-	const audioBuffers = getContext<{ engine: AudioBuffer | null; shot: AudioBuffer | null; shellFly: AudioBuffer | null; treeFire: AudioBuffer | null }>('audioBuffers') ?? null;
-
-	let whistleSound: THREE.PositionalAudio | null = null;
-	if (audioListener) {
-		whistleSound = new THREE.PositionalAudio(audioListener);
-		whistleSound.setRefDistance(20);
-		whistleSound.setMaxDistance(400);
-		whistleSound.setLoop(true);
-		whistleSound.setVolume(0.5);
-	}
+	let whistleRef: { stop: () => unknown } | undefined;
 
 	const GRAVITY = 10;
 	const HIT_RADIUS = 2.5;
@@ -71,7 +62,6 @@
 	});
 
 	onDestroy(() => {
-		if (whistleSound?.isPlaying) whistleSound.stop();
 		shellGeo.dispose();
 		shellMat.dispose();
 	});
@@ -82,7 +72,6 @@
 
 	let groupRef: THREE.Group | null = null;
 	let done = false;
-	let whistleStarted = false;
 
 	interface SplashEntry {
 		id: number;
@@ -141,16 +130,9 @@
 	useTask((delta) => {
 		// Shell hit terrain — keep task alive until splashes finish, then remove
 		if (done) {
-			if (whistleSound?.isPlaying) whistleSound.stop();
+			whistleRef?.stop();
 			if (splashes.length === 0) onremove?.();
 			return;
-		}
-
-		// Start whistle once buffer loads
-		if (whistleSound && audioBuffers && !whistleStarted && audioBuffers.shellFly) {
-			whistleSound.setBuffer(audioBuffers.shellFly);
-			whistleSound.play();
-			whistleStarted = true;
 		}
 
 		if (firerGraceTimer > 0) firerGraceTimer -= delta;
@@ -264,11 +246,19 @@
 <T.Group
 	oncreate={(ref) => {
 		groupRef = ref;
-		if (whistleSound) ref.add(whistleSound);
 	}}
 	position={[position.x, position.y, position.z]}
 >
 	<T.Mesh castShadow geometry={shellGeo} material={shellMat} />
+	<PositionalAudio
+		src="/audio/shell-fly.mp3"
+		loop
+		autoplay
+		bind:this={whistleRef}
+		refDistance={20}
+		maxDistance={400}
+		volume={0.5}
+	/>
 </T.Group>
 
 {#each splashes as s (s.id)}

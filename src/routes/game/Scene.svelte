@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
 	import { T, useThrelte } from '@threlte/core';
-	import { setContext, onDestroy, onMount } from 'svelte';
+	import { setContext, onDestroy } from 'svelte';
 	import Tank from '$lib/Tank.svelte';
 	import Shell from '$lib/Shell.svelte';
 	import Explosion from '$lib/Explosion.svelte';
@@ -298,46 +298,6 @@
 	const shellFollow: { pos: THREE.Vector3 | null } = { pos: null };
 	setContext('shellFollow', shellFollow);
 	let trackedExplosionId: number | null = null;
-
-	// --- Audio system ---
-	const audioListener = new THREE.AudioListener();
-	const audioLoader = new THREE.AudioLoader();
-	interface AudioBuffers {
-		engine: AudioBuffer | null;
-		shot: AudioBuffer | null;
-		shellFly: AudioBuffer | null;
-		treeFire: AudioBuffer | null;
-		explosion: AudioBuffer | null;
-	}
-	const audioBuffers: AudioBuffers = { engine: null, shot: null, shellFly: null, treeFire: null, explosion: null };
-
-	function tryLoadAudio(ogg: string, mp3: string, key: keyof AudioBuffers) {
-		audioLoader.load(ogg, (buf) => { audioBuffers[key] = buf; }, undefined, () => {
-			audioLoader.load(mp3, (buf) => { audioBuffers[key] = buf; });
-		});
-	}
-	tryLoadAudio('/audio/diesel-engine.ogg', '/audio/diesel-engine.mp3', 'engine');
-	tryLoadAudio('/audio/shot.ogg', '/audio/shot.mp3', 'shot');
-	tryLoadAudio('/audio/shell-fly.ogg', '/audio/shell-fly.mp3', 'shellFly');
-	tryLoadAudio('/audio/tree-on-fire.ogg', '/audio/tree-on-fire.mp3', 'treeFire');
-	tryLoadAudio('/audio/explosion.ogg', '/audio/explosion.mp3', 'explosion');
-
-	setContext('audioListener', audioListener);
-	setContext('audioBuffers', audioBuffers);
-
-	onMount(() => {
-		const resume = () => audioListener.context.resume();
-		window.addEventListener('pointerdown', resume, { once: true });
-		window.addEventListener('keydown', resume, { once: true });
-		return () => {
-			window.removeEventListener('pointerdown', resume);
-			window.removeEventListener('keydown', resume);
-		};
-	});
-
-	onDestroy(() => {
-		audioListener.context.close();
-	});
 
 	const CRATER_DEPTH = 0.75;
 

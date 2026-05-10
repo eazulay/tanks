@@ -1,7 +1,8 @@
 <script lang="ts">
 	import * as THREE from 'three';
 	import { T, useTask } from '@threlte/core';
-	import { getContext, onDestroy } from 'svelte';
+	import { PositionalAudio } from '@threlte/extras';
+	import { onDestroy } from 'svelte';
 	import Flames from './Flames.svelte';
 
 	let {
@@ -67,20 +68,8 @@
 	const flameBoost = Math.max(1, scale);
 
 	let isBurning = $state(false);
-	let isBurnt = false;
-
-	const audioListener = getContext<THREE.AudioListener>('audioListener') ?? null;
-	const audioBuffers = getContext<{ engine: AudioBuffer | null; shot: AudioBuffer | null; shellFly: AudioBuffer | null; treeFire: AudioBuffer | null }>('audioBuffers') ?? null;
-
-	let fireSound: THREE.PositionalAudio | null = null;
-	let fireSoundStarted = false;
-	if (audioListener) {
-		fireSound = new THREE.PositionalAudio(audioListener);
-		fireSound.setRefDistance(25);
-		fireSound.setMaxDistance(300);
-		fireSound.setLoop(true);
-		fireSound.setVolume(1.0);
-	}
+	let isBurnt = $state(false);
+	let fireSoundVolume = $state(1.0);
 
 	useTask(() => {
 		if (burntAt === null || isBurnt) return;
@@ -89,16 +78,7 @@
 		const burnFraction = Math.min(elapsed / BURN_DURATION, 1);
 
 		if (!isBurning) isBurning = true;
-
-		// Start fire sound once buffer loads
-		if (fireSound && audioBuffers && !fireSoundStarted && audioBuffers.treeFire) {
-			fireSound.setBuffer(audioBuffers.treeFire);
-			fireSound.play();
-			fireSoundStarted = true;
-		}
-		if (fireSound?.isPlaying) {
-			fireSound.setVolume(1.0 - burnFraction);
-		}
+		fireSoundVolume = 1.0 - burnFraction;
 
 		// Char colour progresses linearly so darkening is visible from the start
 		foliageMat.color.lerpColors(_origFoliage, _charFoliage, burnFraction);
@@ -108,12 +88,10 @@
 		if (elapsed >= BURN_DURATION) {
 			isBurnt = true;
 			isBurning = false;
-			if (fireSound?.isPlaying) fireSound.stop();
 		}
 	});
 
 	onDestroy(() => {
-		if (fireSound?.isPlaying) fireSound.stop();
 		trunkGeo.dispose();
 		trunkMat.dispose();
 		foliageMat.dispose();
@@ -121,13 +99,21 @@
 	});
 </script>
 
-<T.Group position={[x, y, z]} rotation.y={rotation} oncreate={(ref) => {
-	if (fireSound) (ref as THREE.Group).add(fireSound);
-}}>
+<T.Group position={[x, y, z]} rotation.y={rotation}>
 	<T.Mesh geometry={trunkGeo} material={trunkMat} castShadow position.y={trunkH / 2} />
 	{#each layerData as layer}
 		<T.Mesh geometry={layer.geo} material={foliageMat} castShadow position.y={layer.posY} />
 	{/each}
+	{#if burntAt !== null && !isBurnt}
+		<PositionalAudio
+			src="/audio/tree-on-fire.mp3"
+			loop
+			autoplay
+			volume={fireSoundVolume}
+			refDistance={25}
+			maxDistance={300}
+		/>
+	{/if}
 </T.Group>
 <Flames
 	{x}

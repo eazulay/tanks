@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
 	import { T, useTask } from '@threlte/core';
+	import { AudioListener, PositionalAudio } from '@threlte/extras';
 	import { getContext, onMount, onDestroy } from 'svelte';
 	import type { Object3D } from 'three';
 	import Splash from './Splash.svelte';
@@ -26,22 +27,8 @@
 	const treeTrunks = getContext<{ x: number; z: number; r: number }[]>('treeTrunks');
 	const tankBodies = getContext<TankBody[]>('tankBodies');
 	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
-	const audioListener = getContext<THREE.AudioListener>('audioListener') ?? null;
-	const audioBuffers = getContext<{ engine: AudioBuffer | null; shot: AudioBuffer | null; shellFly: AudioBuffer | null; treeFire: AudioBuffer | null }>('audioBuffers') ?? null;
-
-	let engineSound: THREE.PositionalAudio | null = null;
-	let shotSound: THREE.PositionalAudio | null = null;
-	if (audioListener) {
-		engineSound = new THREE.PositionalAudio(audioListener);
-		engineSound.setRefDistance(30);
-		engineSound.setLoop(true);
-		engineSound.setVolume(0.6);
-
-		shotSound = new THREE.PositionalAudio(audioListener);
-		shotSound.setRefDistance(40);
-		shotSound.setMaxDistance(600);
-		shotSound.setVolume(1.0);
-	}
+	let enginePlaybackRate = $state(0.5);
+	let shotRef: { play: (delay?: number) => Promise<unknown> } | undefined = $state();
 
 	// Register this tank's body; other tanks write impulses here, we apply + decay them each frame.
 	// hitAt is written by Shell when a shell strikes us, triggering the fire+explosion sequence.
@@ -310,8 +297,6 @@
 	});
 
 	onDestroy(() => {
-		if (engineSound?.isPlaying) engineSound.stop();
-		if (shotSound?.isPlaying) shotSound.stop();
 		const idx = tankBodies?.indexOf(ownBody) ?? -1;
 		if (idx !== -1) tankBodies!.splice(idx, 1);
 		hullGeometry.dispose();
@@ -464,11 +449,7 @@
 		dir.multiplyScalar(SHELL_MIN_SPEED + chargeLevel * (SHELL_MAX_SPEED - SHELL_MIN_SPEED));
 
 		onfire?.(muzzle, dir, ownBody.uid);
-		if (shotSound && audioBuffers?.shot) {
-			if (!shotSound.buffer) shotSound.setBuffer(audioBuffers.shot);
-			if (shotSound.isPlaying) shotSound.stop();
-			shotSound.play();
-		}
+		shotRef?.play();
 	}
 
 	// --- AI helpers ---
@@ -560,11 +541,7 @@
 		dir.applyAxisAngle(_Y_AXIS, tankHeading);
 		dir.multiplyScalar(aiFireSpeed);
 		onfire?.(muzzle, dir, ownBody.uid);
-		if (shotSound && audioBuffers?.shot) {
-			if (!shotSound.buffer) shotSound.setBuffer(audioBuffers.shot);
-			if (shotSound.isPlaying) shotSound.stop();
-			shotSound.play();
-		}
+		shotRef?.play();
 	}
 
 	// --- Terrain helpers ---
@@ -725,17 +702,7 @@
 			}
 		}
 
-		// Engine sound — start when buffer loads; adjust pitch to speed; stop on destruction
-		if (engineSound && audioBuffers) {
-			if (!engineSound.buffer && audioBuffers.engine) {
-				engineSound.setBuffer(audioBuffers.engine);
-				engineSound.play();
-			}
-			if (engineSound.isPlaying) {
-				engineSound.setPlaybackRate(0.5 + Math.abs(speed) * 0.04);
-				if (tankDestroyed) engineSound.stop();
-			}
-		}
+		enginePlaybackRate = 0.5 + Math.abs(speed) * 0.04;
 
 		// Fully destroyed — nothing to do
 		if (tankDestroyed) return;
@@ -1420,7 +1387,6 @@
 	const handleCameraCreate = (ref: Object3D) => {
 		cameraRef = ref;
 		ref.lookAt(tankPosition);
-		if (controlled && audioListener) ref.add(audioListener);
 	};
 </script>
 
@@ -1430,7 +1396,9 @@
 		castShadow
 		position={[cameraPosition.x, cameraPosition.y, cameraPosition.z]}
 		oncreate={handleCameraCreate}
-	/>
+	>
+		<AudioListener />
+	</T.PerspectiveCamera>
 	<T.DirectionalLight castShadow intensity={3} oncreate={handleLightCreate} />
 {/if}
 
@@ -1439,10 +1407,25 @@
 	rotation.y={tankHeading}
 	oncreate={(ref) => {
 		tankGroupRef = ref as THREE.Group;
-		if (engineSound) ref.add(engineSound);
-		if (shotSound) ref.add(shotSound);
 	}}
 >
+	{#if !tankDestroyed}
+		<PositionalAudio
+			src="/audio/diesel-engine.mp3"
+			loop
+			autoplay
+			volume={0.6}
+			refDistance={30}
+			playbackRate={enginePlaybackRate}
+		/>
+		<PositionalAudio
+			src="/audio/shot.mp3"
+			bind:this={shotRef}
+			refDistance={40}
+			maxDistance={600}
+		/>
+	{/if}
+
 	<T.Group rotation.x={tankPitch} rotation.z={tankRoll}>
 		{#each trackSides as tx}
 			<!-- Track belt -->
