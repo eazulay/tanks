@@ -27,7 +27,12 @@
 	const treeTrunks = getContext<{ x: number; z: number; r: number }[]>('treeTrunks');
 	const tankBodies = getContext<TankBody[]>('tankBodies');
 	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
+	const ENGINE_VOLUME = controlled ? 0.6 : 1.5;
+	const ENGINE_IDLE_TIMEOUT = 1.0; // seconds stationary before engine fades out
+	const ENGINE_SPEED_THRESHOLD = 0.5; // m/s below which the tank counts as stopped
+	let engineIdleTimer = 0;
 	let enginePlaybackRate = $state(0.5);
+	let engineVolume = $state(ENGINE_VOLUME);
 	let shotRef: { play: (delay?: number) => Promise<unknown> } | undefined = $state();
 
 	// Register this tank's body; other tanks write impulses here, we apply + decay them each frame.
@@ -703,6 +708,14 @@
 		}
 
 		enginePlaybackRate = 0.5 + Math.abs(speed) * 0.04;
+		if (Math.abs(speed) < ENGINE_SPEED_THRESHOLD) {
+			engineIdleTimer += delta;
+		} else {
+			engineIdleTimer = 0;
+		}
+		const targetEngineVol = engineIdleTimer >= ENGINE_IDLE_TIMEOUT ? 0 : ENGINE_VOLUME;
+		engineVolume += (targetEngineVol - engineVolume) * Math.min(1, 5 * delta);
+		if (Math.abs(engineVolume - targetEngineVol) < 0.005) engineVolume = targetEngineVol;
 
 		// Fully destroyed — nothing to do
 		if (tankDestroyed) return;
@@ -1414,7 +1427,7 @@
 			src="/audio/diesel-engine.mp3"
 			loop
 			autoplay
-			volume={0.6}
+			volume={engineVolume}
 			refDistance={30}
 			playbackRate={enginePlaybackRate}
 		/>
