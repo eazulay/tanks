@@ -835,6 +835,23 @@
 						aiState = 'patrol';
 						aiTargetUid = null;
 					} else {
+						// Switch to a closer visible target if one exists
+						const edx = engageBody.x - tankPosition.x;
+						const edz = engageBody.z - tankPosition.z;
+						const engageDist2 = edx * edx + edz * edz;
+						for (const body of tankBodies) {
+							if (body === ownBody || body.uid === aiTargetUid || body.hitAt !== null) continue;
+							const bdx = body.x - tankPosition.x;
+							const bdz = body.z - tankPosition.z;
+							if (bdx * bdx + bdz * bdz < engageDist2 && aiLosCheck(body.x, body.y, body.z)) {
+								aiTargetUid = body.uid;
+								engageBody = body;
+								aiTargetVelX = 0; aiTargetVelZ = 0; aiVelSampleTime = 0;
+								ownBody.lastShellImpact = null;
+								aiAimBiasSpeed = 0; aiAimBiasTurret = 0; aiMissCount = 0;
+								break;
+							}
+						}
 						hasLos = aiLosCheck(engageBody.x, engageBody.y, engageBody.z);
 						if (hasLos) {
 							aiLastSeenX = engageBody.x;
