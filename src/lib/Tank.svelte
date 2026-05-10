@@ -342,6 +342,9 @@
 	const AI_STOP_SPEED = 0.6; // must be slower than this to fire
 	const AI_MAX_FIRE_SLOPE = 0.15; // max combined pitch+roll (rad) before seeking flatter ground
 	const AI_SLOPE_CREEP_SPEED = 3; // m/s crawl speed while seeking flat ground inside engagement range
+	const AI_SEARCH_APPROACH_DIST = AI_MIN_ENGAGE_DIST * 2; // switch to half-speed within this radius of last known position
+	const AI_SEARCH_APPROACH_SPEED = 8; // m/s cap during slow approach (≈ half of ~16.7 m/s terminal velocity)
+	const AI_SEARCH_ARRIVE_DIST = 12; // give up and patrol when this close to last known position
 	const CUPOLA_H = 1.6; // cupola-top Y above tankPosition.y for LOS origin/target
 	const AI_REPOSITION_MISSES = 3; // consecutive misses before closing or opening the engagement range
 	const AI_STUCK_TIMEOUT = 1.5; // seconds of blocked movement before attempting a terrain detour
@@ -843,7 +846,8 @@
 				} else if (aiState === 'search') {
 					const sdx = aiLastSeenX - tankPosition.x,
 						sdz = aiLastSeenZ - tankPosition.z;
-					if (sdx * sdx + sdz * sdz < 25 * 25) {
+					const sDist2 = sdx * sdx + sdz * sdz;
+					if (sDist2 < AI_SEARCH_ARRIVE_DIST * AI_SEARCH_ARRIVE_DIST) {
 						aiState = 'patrol';
 						aiPatrolTimer = 2;
 					} else {
@@ -851,7 +855,18 @@
 						const hDelta = normalizeAngle(targetH - tankHeading);
 						if (hDelta > 0.12) leftHeld = true;
 						else if (hDelta < -0.12) rightHeld = true;
-						if (Math.abs(hDelta) < 1.2) upHeld = true;
+						if (Math.abs(hDelta) < 1.2) {
+							if (sDist2 < AI_SEARCH_APPROACH_DIST * AI_SEARCH_APPROACH_DIST) {
+								// Within the slow-approach zone — creep in at half speed
+								if (Math.abs(speed) > AI_SEARCH_APPROACH_SPEED) {
+									braking = true;
+								} else {
+									upHeld = true;
+								}
+							} else {
+								upHeld = true;
+							}
+						}
 					}
 					turretHeading += TURRET_SPEED * 0.45 * aiScanDir * delta;
 					if (Math.abs(turretHeading) > Math.PI / 3) {
