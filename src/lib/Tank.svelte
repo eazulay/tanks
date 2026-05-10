@@ -26,6 +26,22 @@
 	const treeTrunks = getContext<{ x: number; z: number; r: number }[]>('treeTrunks');
 	const tankBodies = getContext<TankBody[]>('tankBodies');
 	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
+	const audioListener = getContext<THREE.AudioListener>('audioListener') ?? null;
+	const audioBuffers = getContext<{ engine: AudioBuffer | null; shot: AudioBuffer | null; shellFly: AudioBuffer | null; treeFire: AudioBuffer | null }>('audioBuffers') ?? null;
+
+	let engineSound: THREE.PositionalAudio | null = null;
+	let shotSound: THREE.PositionalAudio | null = null;
+	if (audioListener) {
+		engineSound = new THREE.PositionalAudio(audioListener);
+		engineSound.setRefDistance(30);
+		engineSound.setLoop(true);
+		engineSound.setVolume(0.6);
+
+		shotSound = new THREE.PositionalAudio(audioListener);
+		shotSound.setRefDistance(40);
+		shotSound.setMaxDistance(600);
+		shotSound.setVolume(1.0);
+	}
 
 	// Register this tank's body; other tanks write impulses here, we apply + decay them each frame.
 	// hitAt is written by Shell when a shell strikes us, triggering the fire+explosion sequence.
@@ -294,6 +310,8 @@
 	});
 
 	onDestroy(() => {
+		if (engineSound?.isPlaying) engineSound.stop();
+		if (shotSound?.isPlaying) shotSound.stop();
 		const idx = tankBodies?.indexOf(ownBody) ?? -1;
 		if (idx !== -1) tankBodies!.splice(idx, 1);
 		hullGeometry.dispose();
@@ -446,6 +464,11 @@
 		dir.multiplyScalar(SHELL_MIN_SPEED + chargeLevel * (SHELL_MAX_SPEED - SHELL_MIN_SPEED));
 
 		onfire?.(muzzle, dir, ownBody.uid);
+		if (shotSound && audioBuffers?.shot) {
+			if (!shotSound.buffer) shotSound.setBuffer(audioBuffers.shot);
+			if (shotSound.isPlaying) shotSound.stop();
+			shotSound.play();
+		}
 	}
 
 	// --- AI helpers ---
@@ -537,6 +560,11 @@
 		dir.applyAxisAngle(_Y_AXIS, tankHeading);
 		dir.multiplyScalar(aiFireSpeed);
 		onfire?.(muzzle, dir, ownBody.uid);
+		if (shotSound && audioBuffers?.shot) {
+			if (!shotSound.buffer) shotSound.setBuffer(audioBuffers.shot);
+			if (shotSound.isPlaying) shotSound.stop();
+			shotSound.play();
+		}
 	}
 
 	// --- Terrain helpers ---
@@ -694,6 +722,18 @@
 			if (cameraRef) {
 				(cameraRef as THREE.PerspectiveCamera).fov = currentFov;
 				(cameraRef as THREE.PerspectiveCamera).updateProjectionMatrix();
+			}
+		}
+
+		// Engine sound — start when buffer loads; adjust pitch to speed; stop on destruction
+		if (engineSound && audioBuffers) {
+			if (!engineSound.buffer && audioBuffers.engine) {
+				engineSound.setBuffer(audioBuffers.engine);
+				engineSound.play();
+			}
+			if (engineSound.isPlaying) {
+				engineSound.setPlaybackRate(0.5 + Math.abs(speed) * 0.04);
+				if (tankDestroyed) engineSound.stop();
 			}
 		}
 
@@ -1380,6 +1420,7 @@
 	const handleCameraCreate = (ref: Object3D) => {
 		cameraRef = ref;
 		ref.lookAt(tankPosition);
+		if (controlled && audioListener) ref.add(audioListener);
 	};
 </script>
 
@@ -1398,6 +1439,8 @@
 	rotation.y={tankHeading}
 	oncreate={(ref) => {
 		tankGroupRef = ref as THREE.Group;
+		if (engineSound) ref.add(engineSound);
+		if (shotSound) ref.add(shotSound);
 	}}
 >
 	<T.Group rotation.x={tankPitch} rotation.z={tankRoll}>

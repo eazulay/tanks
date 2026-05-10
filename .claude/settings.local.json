@@ -5,7 +5,12 @@
       "Bash(npx prettier *)",
       "Bash(node *)",
       "PowerShell(npm run *)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(dir C:\\\\node\\\\tanks\\\\static\\\\audio *)",
+      "WebFetch(domain:threlte.xyz)",
+      "WebSearch",
+      "WebFetch(domain:threlte.vercel.app)",
+      "Bash(npm list *)"
     ]
   }
 }

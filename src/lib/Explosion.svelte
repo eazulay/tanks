@@ -34,6 +34,17 @@
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
+	const audioListener = getContext<THREE.AudioListener>('audioListener') ?? null;
+	const audioBuffers = getContext<{ explosion: AudioBuffer | null }>('audioBuffers') ?? null;
+
+	let explosionSound: THREE.PositionalAudio | null = null;
+	let explosionSoundPlayed = false;
+	if (audioListener) {
+		explosionSound = new THREE.PositionalAudio(audioListener);
+		explosionSound.setRefDistance(50);
+		explosionSound.setMaxDistance(800);
+		explosionSound.setVolume(tankExplosion ? 1.5 : 1.0);
+	}
 
 	const FIREBALL_DURATION = 0.6;
 	const FIREBALL_MAX_RADIUS = tankExplosion ? 3.5 : 2.5;
@@ -134,6 +145,7 @@
 	}
 
 	onDestroy(() => {
+		if (explosionSound?.isPlaying) explosionSound.stop();
 		fireballGeo.dispose();
 		fireballMat.dispose();
 		debrisGeo.dispose();
@@ -142,6 +154,13 @@
 
 	const { stop } = useTask((delta) => {
 		elapsed += delta;
+
+		// Play explosion sound on first frame
+		if (!explosionSoundPlayed && explosionSound && audioBuffers?.explosion) {
+			explosionSound.setBuffer(audioBuffers.explosion);
+			explosionSound.play();
+			explosionSoundPlayed = true;
+		}
 
 		// Fireball: expand via sin curve while fading
 		if (fireballRef) {
@@ -239,6 +258,7 @@
 <T.Mesh
 	oncreate={(ref) => {
 		fireballRef = ref;
+		if (explosionSound) ref.add(explosionSound);
 	}}
 	geometry={fireballGeo}
 	material={fireballMat}

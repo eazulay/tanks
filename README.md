@@ -33,6 +33,16 @@ The camera tracks behind the barrel. In zoom mode, it follows the shell in fligh
 
 **Click "Mouse Control"** on the start panel to enable pointer lock and mouse aim, or use arrow keys without it.
 
+## Attributions
+
+**Sound files**
+
+Diesel engine operation by nomerodin1 -- https://freesound.org/s/723104/ -- License: Creative Commons 0
+Short Wave Radio Noise 1 by zmobie -- https://freesound.org/s/257880/ -- License: Creative Commons 0
+Steampunk Crossbow Shot 1 by qubodup -- https://freesound.org/s/219457/ -- License: Attribution 4.0
+Explosion_001.mp3 by cydon -- https://freesound.org/s/268557/ -- License: Attribution NonCommercial 4.0
+Fire_Forest_Inferno.aif by Dynamicell -- https://freesound.org/s/17548/ -- License: Attribution 3.0
+
 ## Running locally
 
 ```bash
