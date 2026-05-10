@@ -340,6 +340,7 @@
 	const AI_MAX_ENGAGE_DIST = 350; // approach if farther than this
 	const AI_AIM_TOL = 0.05; // radians within aim target before firing
 	const AI_STOP_SPEED = 0.6; // must be slower than this to fire
+	const AI_MAX_FIRE_SLOPE = 0.15; // max combined pitch+roll (rad) before seeking flatter ground
 	const CUPOLA_H = 1.6; // cupola-top Y above tankPosition.y for LOS origin/target
 	const AI_REPOSITION_MISSES = 3; // consecutive misses before closing or opening the engagement range
 	const AI_STUCK_TIMEOUT = 1.5; // seconds of blocked movement before attempting a terrain detour
@@ -889,8 +890,36 @@
 						else if (hDelta < -0.12) rightHeld = true;
 						upHeld = true;
 					} else {
-						// Good range — stop, aim, fire
-						braking = true;
+						// Good range — find flat ground, then aim and fire.
+						// On a sloped platform the barrel's world-space elevation differs from
+						// barrelElevation by up to tankPitch/tankRoll, throwing off the ballistic
+						// solution. Creep along the terrain contour until the ground is level enough.
+						const slopeMag = Math.hypot(tankPitch, tankRoll);
+						const onSlope = slopeMag > AI_MAX_FIRE_SLOPE;
+						if (onSlope) {
+							// Drive along the terrain contour (perpendicular to steepest-ascent
+							// direction) so the AI traverses the slope rather than climbing it.
+							// Contour direction = gradient rotated 90°; pick the sign that faces
+							// roughly toward the target so the AI doesn't wander away.
+							const sf = Math.tan(tankPitch),
+								sr = Math.tan(tankRoll);
+							const sinH = Math.sin(tankHeading),
+								cosH = Math.cos(tankHeading);
+							// Gradient in world XZ: gx = -sf*sinH + sr*cosH, gz = -sf*cosH - sr*sinH
+							// Contour = rotate gradient 90° CCW (viewed top-down): (-gz, gx)
+							const c1x = sf * cosH + sr * sinH;
+							const c1z = -sf * sinH + sr * cosH;
+							const towardTarget = c1x * edx + c1z * edz;
+							const cx = towardTarget >= 0 ? c1x : -c1x;
+							const cz = towardTarget >= 0 ? c1z : -c1z;
+							const contourH = Math.atan2(-cx, -cz);
+							const hDelta = normalizeAngle(contourH - tankHeading);
+							if (hDelta > 0.12) leftHeld = true;
+							else if (hDelta < -0.12) rightHeld = true;
+							upHeld = true;
+						} else {
+							braking = true;
+						}
 						// Sample target velocity every 500 ms while we have LOS
 						if (hasLos) {
 							const nowMs = Date.now();
@@ -944,7 +973,7 @@
 							const aimed =
 								Math.abs(normalizeAngle(aiTargetTurretH - turretHeading)) < AI_AIM_TOL &&
 								Math.abs(aiTargetElev - barrelElevation) < AI_AIM_TOL;
-							if (aimed && Math.abs(speed) < AI_STOP_SPEED && hasLos) {
+							if (aimed && Math.abs(speed) < AI_STOP_SPEED && hasLos && !onSlope) {
 								aiStopTimer += delta;
 								if (aiStopTimer > 0.3) {
 									ownBody.lastShellImpact = null; // clear before new shell can write
@@ -960,11 +989,29 @@
 					}
 				} else if (aiState === 'cooldown') {
 					aiCooldownTimer -= delta;
-					// Track turret toward last known position during reload
-					if (aiComputeAim(aiLastSeenX, getTerrainHeight(aiLastSeenX, aiLastSeenZ), aiLastSeenZ)) {
-						const tDelta = normalizeAngle(aiTargetTurretH - turretHeading);
+					// Track turret and barrel toward last known target position during reload.
+					// Heading uses pure geometry (never fails); ballistic re-solve also updates
+					// barrel elevation so the AI is aimed and ready when cooldown ends.
+					const cdx = aiLastSeenX - tankPosition.x,
+						cdz = aiLastSeenZ - tankPosition.z;
+					if (cdx * cdx + cdz * cdz >= 1) {
+						const trackH = normalizeAngle(Math.atan2(-cdx, -cdz) - tankHeading);
+						const tDelta = normalizeAngle(trackH - turretHeading);
 						turretHeading +=
 							Math.sign(tDelta) * Math.min(Math.abs(tDelta), TURRET_SPEED * delta);
+						if (
+							aiComputeAim(aiLastSeenX, getTerrainHeight(aiLastSeenX, aiLastSeenZ), aiLastSeenZ)
+						) {
+							const bDelta = aiTargetElev - barrelElevation;
+							barrelElevation = Math.max(
+								BARREL_MIN,
+								Math.min(
+									BARREL_MAX,
+									barrelElevation +
+										Math.sign(bDelta) * Math.min(Math.abs(bDelta), BARREL_SPEED * delta)
+								)
+							);
+						}
 					}
 					if (aiCooldownTimer <= 0) {
 						// Compute directional correction from where the shell actually landed
