@@ -341,6 +341,8 @@
 	const AI_AIM_TOL = 0.05; // radians within aim target before firing
 	const AI_STOP_SPEED = 0.6; // must be slower than this to fire
 	const CUPOLA_H = 1.6; // cupola-top Y above tankPosition.y for LOS origin/target
+	const AI_REPOSITION_MISSES = 3; // consecutive misses before closing or opening the engagement range
+	const AI_STUCK_TIMEOUT = 1.5; // seconds of blocked movement before attempting a terrain detour
 
 	// AI state — plain lets, reset automatically on component remount (restart)
 	let aiState: 'patrol' | 'search' | 'engage' | 'cooldown' = 'patrol';
@@ -363,6 +365,9 @@
 	let aiVelSampleX = 0; // target position at last velocity sample
 	let aiVelSampleZ = 0;
 	let aiVelSampleTime = 0; // Date.now() timestamp of last velocity sample
+	let aiMissCount = 0; // consecutive misses — triggers repositioning when high
+	let aiStuckTimer = 0; // seconds the AI has been trying to move with speed near 0
+	let aiStuckTurnDir = 1; // +1 = detour left, -1 = detour right
 
 	$effect(() => {
 		if (!controlled) return;
@@ -783,6 +788,7 @@
 						ownBody.lastShellImpact = null;
 						aiAimBiasSpeed = 0;
 						aiAimBiasTurret = 0;
+						aiMissCount = 0;
 					}
 				}
 
@@ -854,16 +860,28 @@
 						edz = aimZ - tankPosition.z;
 					const eDist = Math.sqrt(edx * edx + edz * edz);
 
+					// After repeated misses, reposition: move closer if shell falls short,
+					// back away if shell overshoots. Effect ramps up after AI_REPOSITION_MISSES misses.
+					const excessMisses = Math.max(0, aiMissCount - (AI_REPOSITION_MISSES - 1));
+					const effectiveMaxDist =
+						excessMisses > 0 && aiAimBiasSpeed >= 0
+							? Math.max(AI_MIN_ENGAGE_DIST + 50, AI_MAX_ENGAGE_DIST - excessMisses * 50)
+							: AI_MAX_ENGAGE_DIST;
+					const effectiveMinDist =
+						excessMisses > 0 && aiAimBiasSpeed < -3
+							? Math.min(AI_MAX_ENGAGE_DIST - 50, AI_MIN_ENGAGE_DIST + excessMisses * 15)
+							: AI_MIN_ENGAGE_DIST;
+
 					if (!hasLos && Date.now() - aiLastSeenTime > 2500) {
 						aiState = 'search';
-					} else if (eDist > AI_MAX_ENGAGE_DIST) {
+					} else if (eDist > effectiveMaxDist) {
 						// Approach
 						const targetH = Math.atan2(-edx, -edz);
 						const hDelta = normalizeAngle(targetH - tankHeading);
 						if (hDelta > 0.12) leftHeld = true;
 						else if (hDelta < -0.12) rightHeld = true;
 						upHeld = true;
-					} else if (eDist < AI_MIN_ENGAGE_DIST) {
+					} else if (eDist < effectiveMinDist) {
 						// Back away
 						const awayH = Math.atan2(edx, edz);
 						const hDelta = normalizeAngle(awayH - tankHeading);
@@ -978,13 +996,30 @@
 								const tgtHeading = Math.atan2(-tgtDx, -tgtDz);
 								aiAimBiasTurret = normalizeAngle(tgtHeading - impHeading) * 0.7;
 							}
+							aiMissCount++;
 						} else {
-							// Shot hit a tank — aim was good; don't carry stale corrections into next shot
+							// Shot hit a tank — aim was good; reset corrections and miss count
 							aiAimBiasSpeed = 0;
 							aiAimBiasTurret = 0;
+							aiMissCount = 0;
 						}
 						aiState = hasLos ? 'engage' : 'search';
 					}
+				}
+				// Stuck on terrain: wants to move but speed stays near 0 (slope too steep for heading)
+				if ((upHeld || downHeld) && Math.abs(speed) < 0.3) {
+					aiStuckTimer += delta;
+					if (aiStuckTimer > AI_STUCK_TIMEOUT) {
+						// Override steering to detour around the obstacle; flip side every 3× timeout
+						leftHeld = aiStuckTurnDir > 0;
+						rightHeld = aiStuckTurnDir <= 0;
+						if (aiStuckTimer > AI_STUCK_TIMEOUT * 3) {
+							aiStuckTurnDir = -aiStuckTurnDir;
+							aiStuckTimer = 0;
+						}
+					}
+				} else {
+					aiStuckTimer = 0;
 				}
 			}
 		}
