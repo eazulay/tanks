@@ -6,6 +6,7 @@
 	import Shell from '$lib/Shell.svelte';
 	import Explosion from '$lib/Explosion.svelte';
 	import Tree from '$lib/Tree.svelte';
+	import type { TankBody } from '$lib/types';
 
 	interface TankHealthEntry {
 		health: number;
@@ -16,11 +17,13 @@
 	let {
 		opponentCount = 1,
 		tankHealthData = $bindable<TankHealthEntry[]>([]),
-		gameOver = false
+		gameOver = false,
+		allGameOver = false
 	}: {
 		opponentCount?: number;
 		tankHealthData?: TankHealthEntry[];
 		gameOver?: boolean;
+		allGameOver?: boolean;
 	} = $props();
 
 	const { scene } = useThrelte();
@@ -287,16 +290,7 @@
 	// Each Tank pushes its own entry on mount and keeps it updated every physics frame.
 	// pushVx/pushVz accumulate impulses written by colliding tanks; the owner applies and decays them.
 	// hitAt is set by Shell when a shell strikes the tank; Tank watches it to trigger fire+explosion.
-	const tankBodies: {
-		uid: number;
-		x: number;
-		y: number;
-		z: number;
-		pushVx: number;
-		pushVz: number;
-		hitAt: number | null;
-		lastHit: { dist: number; wx: number; wz: number; splash?: boolean } | null;
-	}[] = [];
+	const tankBodies: TankBody[] = [];
 	setContext('tankBodies', tankBodies);
 
 	// Shell position tracker — Shell writes its live position here; Tank camera reads it when zoomed.
@@ -376,6 +370,14 @@
 		const id = nextShellId++;
 		shells.push({ id, position, velocity, tracked: true, firingBodyUid });
 		trackedExplosionId = null;
+	}
+
+	function handleOpponentFire(
+		position: THREE.Vector3,
+		velocity: THREE.Vector3,
+		firingBodyUid: number
+	) {
+		shells.push({ id: nextShellId++, position, velocity, tracked: false, firingBodyUid });
 	}
 
 	function removeShell(id: number) {
@@ -647,6 +649,8 @@
 		spawnX={sp.x}
 		spawnZ={sp.z}
 		spawnHeading={sp.heading}
+		gameOver={allGameOver}
+		onfire={handleOpponentFire}
 		onexplode={handleTankExplosion}
 		onhealthchange={(h, d) => {
 			const idx = i + 1;
@@ -660,6 +664,7 @@
 		position={s.position}
 		velocity={s.velocity}
 		excludeBodyUid={s.firingBodyUid}
+		tracked={s.tracked}
 		onremove={() => removeShell(s.id)}
 		onimpact={(pos) => handleImpact(pos, s.tracked)}
 	/>

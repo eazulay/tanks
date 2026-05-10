@@ -5,6 +5,7 @@
 	import type { Object3D } from 'three';
 	import Splash from './Splash.svelte';
 	import Flames from './Flames.svelte';
+	import type { TankBody } from './types';
 
 	let {
 		controlled = false,
@@ -23,18 +24,7 @@
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const treeTrunks = getContext<{ x: number; z: number; r: number }[]>('treeTrunks');
-	const tankBodies = getContext<
-		{
-			uid: number;
-			x: number;
-			y: number;
-			z: number;
-			pushVx: number;
-			pushVz: number;
-			hitAt: number | null;
-			lastHit: { dist: number; wx: number; wz: number; splash?: boolean } | null;
-		}[]
-	>('tankBodies');
+	const tankBodies = getContext<TankBody[]>('tankBodies');
 	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
 
 	// Register this tank's body; other tanks write impulses here, we apply + decay them each frame.
@@ -47,7 +37,8 @@
 		pushVx: 0,
 		pushVz: 0,
 		hitAt: null as number | null,
-		lastHit: null as { dist: number; wx: number; wz: number; splash?: boolean } | null
+		lastHit: null as { dist: number; wx: number; wz: number; splash?: boolean } | null,
+		lastShellImpact: null as { x: number; z: number } | null
 	};
 	tankBodies?.push(ownBody);
 
@@ -155,8 +146,11 @@
 	// Reusable scratch objects to avoid per-frame allocations in useTask and fire()
 	const _X_AXIS = new THREE.Vector3(1, 0, 0);
 	const _Y_AXIS = new THREE.Vector3(0, 1, 0);
+	const _scratchVec3 = new THREE.Vector3();
 	const _scratchEuler = new THREE.Euler(0, 0, 0, 'XYZ');
 	const _scratchQuat = new THREE.Quaternion();
+	// Mantlet pivot offset in turret-local space — read-only, shared across fire() and aiFire()
+	const _PIVOT_OFFSET = new THREE.Vector3(0, 1.29, -0.67);
 	// Target camera orientation for game-over overview: looking straight down, east (+X) pointing up-screen.
 	// Computed once via a dummy camera to avoid manual quaternion math.
 	const _GAME_OVER_END_QUAT = (() => {
@@ -340,6 +334,36 @@
 	let mouseDX = 0,
 		mouseDY = 0;
 
+	// --- AI constants (non-controlled tanks only) ---
+	const AI_VISION_RANGE = 400;
+	const AI_MIN_ENGAGE_DIST = 35; // back away if closer than this
+	const AI_MAX_ENGAGE_DIST = 350; // approach if farther than this
+	const AI_AIM_TOL = 0.05; // radians within aim target before firing
+	const AI_STOP_SPEED = 0.6; // must be slower than this to fire
+	const CUPOLA_H = 1.6; // cupola-top Y above tankPosition.y for LOS origin/target
+
+	// AI state — plain lets, reset automatically on component remount (restart)
+	let aiState: 'patrol' | 'search' | 'engage' | 'cooldown' = 'patrol';
+	let aiTargetUid: number | null = null;
+	let aiLastSeenX = 0;
+	let aiLastSeenZ = 0;
+	let aiLastSeenTime = 0;
+	let aiPatrolAngle = spawnHeading;
+	let aiPatrolTimer = 2 + Math.random() * 4;
+	let aiScanDir = Math.random() < 0.5 ? 1 : -1;
+	let aiCooldownTimer = 0;
+	let aiTargetTurretH = 0;
+	let aiTargetElev = 0;
+	let aiFireSpeed = SHELL_MIN_SPEED;
+	let aiStopTimer = 0;
+	let aiAimBiasSpeed = 0; // speed offset re-rolled after each shot to bracket the range
+	let aiAimBiasTurret = 0; // turret offset re-rolled after each shot to bracket the angle
+	let aiTargetVelX = 0; // estimated target X velocity (world units/s)
+	let aiTargetVelZ = 0;
+	let aiVelSampleX = 0; // target position at last velocity sample
+	let aiVelSampleZ = 0;
+	let aiVelSampleTime = 0; // Date.now() timestamp of last velocity sample
+
 	$effect(() => {
 		if (!controlled) return;
 		const onKeyDown = (e: KeyboardEvent) => {
@@ -392,15 +416,16 @@
 
 	function fire(chargeLevel: number) {
 		zoomedAtFireTime = zoomed;
-		// Muzzle world position: tip of barrel at z=-2.25 in elevation-group local space
-		const muzzle = new THREE.Vector3(0, 0, -2.25);
-		muzzle.applyAxisAngle(_X_AXIS, barrelElevation);
-		muzzle.add(new THREE.Vector3(0, 1.29, -0.67));
-		muzzle.applyAxisAngle(_Y_AXIS, turretHeading);
 		_scratchEuler.set(tankPitch, 0, tankRoll, 'XYZ');
-		muzzle.applyEuler(_scratchEuler);
-		muzzle.applyAxisAngle(_Y_AXIS, tankHeading);
-		muzzle.add(tankPosition);
+		// Muzzle world position: tip of barrel at z=-2.25 in elevation-group local space
+		const muzzle = _scratchVec3.set(0, 0, -2.25)
+			.applyAxisAngle(_X_AXIS, barrelElevation)
+			.add(_PIVOT_OFFSET)
+			.applyAxisAngle(_Y_AXIS, turretHeading)
+			.applyEuler(_scratchEuler)
+			.applyAxisAngle(_Y_AXIS, tankHeading)
+			.add(tankPosition)
+			.clone();
 
 		// Firing direction — barrel points in local -Z
 		const dir = new THREE.Vector3(0, 0, -1);
@@ -410,6 +435,93 @@
 		dir.applyAxisAngle(_Y_AXIS, tankHeading);
 		dir.multiplyScalar(SHELL_MIN_SPEED + chargeLevel * (SHELL_MAX_SPEED - SHELL_MIN_SPEED));
 
+		onfire?.(muzzle, dir, ownBody.uid);
+	}
+
+	// --- AI helpers ---
+	function normalizeAngle(a: number): number {
+		if (a > Math.PI) a -= 2 * Math.PI;
+		if (a < -Math.PI) a += 2 * Math.PI;
+		return a;
+	}
+
+	// Terrain line-of-sight: cupola top → target cupola top, 16 sample points
+	function aiLosCheck(tx: number, ty: number, tz: number): boolean {
+		const sx = tankPosition.x,
+			sy = tankPosition.y + CUPOLA_H,
+			sz = tankPosition.z;
+		const ey = ty + CUPOLA_H;
+		for (let i = 1; i < 16; i++) {
+			const t = i / 16;
+			if (getTerrainHeight(sx + (tx - sx) * t, sz + (tz - sz) * t) > sy + (ey - sy) * t)
+				return false;
+		}
+		return true;
+	}
+
+	// Within 60° (half-angle) of barrel world azimuth
+	function aiFovCheck(tx: number, tz: number): boolean {
+		const dx = tx - tankPosition.x,
+			dz = tz - tankPosition.z;
+		const d2 = dx * dx + dz * dz;
+		if (d2 < 0.01) return true;
+		const dist = Math.sqrt(d2);
+		const az = tankHeading + turretHeading;
+		return (dx / dist) * -Math.sin(az) + (dz / dist) * -Math.cos(az) > 0.5; // cos(60°)
+	}
+
+	function aiCanSeeBody(body: TankBody): boolean {
+		if (body.hitAt !== null) return false;
+		const dx = body.x - tankPosition.x,
+			dz = body.z - tankPosition.z;
+		if (dx * dx + dz * dz > AI_VISION_RANGE * AI_VISION_RANGE) return false;
+		return aiFovCheck(body.x, body.z) && aiLosCheck(body.x, body.y, body.z);
+	}
+
+	// Ballistic solver: compute turret yaw + barrel elevation + speed to hit (tx, ty, tz).
+	// Prefers the low-angle (flatter) solution. Returns false if target unreachable.
+	function aiComputeAim(tx: number, ty: number, tz: number): boolean {
+		const dx = tx - tankPosition.x,
+			dz = tz - tankPosition.z;
+		const horizDist = Math.sqrt(dx * dx + dz * dz);
+		if (horizDist < 1) return false;
+		aiTargetTurretH = normalizeAngle(Math.atan2(-dx, -dz) - tankHeading);
+		const deltaH = ty + CUPOLA_H * 0.5 - (tankPosition.y + 1.29); // aim at mid-cupola
+		for (let v = SHELL_MIN_SPEED; v <= SHELL_MAX_SPEED; v += 3) {
+			const v2 = v * v;
+			const disc = v2 * v2 - GRAVITY * (GRAVITY * horizDist * horizDist + 2 * deltaH * v2);
+			if (disc < 0) continue;
+			const sqD = Math.sqrt(disc);
+			// Low angle first, then high angle if low is out of limits
+			for (const u of [(v2 - sqD) / (GRAVITY * horizDist), (v2 + sqD) / (GRAVITY * horizDist)]) {
+				const e = Math.atan(u);
+				if (e >= BARREL_MIN && e <= BARREL_MAX) {
+					aiTargetElev = e;
+					aiFireSpeed = v;
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	// Fire a shell using the current barrel aim — mirrors fire() but uses aiFireSpeed
+	function aiFire() {
+		_scratchEuler.set(tankPitch, 0, tankRoll, 'XYZ');
+		const muzzle = _scratchVec3.set(0, 0, -2.25)
+			.applyAxisAngle(_X_AXIS, barrelElevation)
+			.add(_PIVOT_OFFSET)
+			.applyAxisAngle(_Y_AXIS, turretHeading)
+			.applyEuler(_scratchEuler)
+			.applyAxisAngle(_Y_AXIS, tankHeading)
+			.add(tankPosition)
+			.clone();
+		const dir = new THREE.Vector3(0, 0, -1);
+		dir.applyAxisAngle(_X_AXIS, barrelElevation);
+		dir.applyAxisAngle(_Y_AXIS, turretHeading);
+		dir.applyEuler(_scratchEuler);
+		dir.applyAxisAngle(_Y_AXIS, tankHeading);
+		dir.multiplyScalar(aiFireSpeed);
 		onfire?.(muzzle, dir, ownBody.uid);
 	}
 
@@ -629,6 +741,251 @@
 				burning = false;
 			} else {
 				return;
+			}
+		}
+
+		// AI control — sets input flags each frame; physics reads them immediately after
+		if (!controlled) {
+			upHeld = false;
+			downHeld = false;
+			leftHeld = false;
+			rightHeld = false;
+			turretLeftHeld = false;
+			turretRightHeld = false;
+			barrelUpHeld = false;
+			barrelDownHeld = false;
+
+			if (!gameOver) {
+				// Scan for new contacts (FOV + LOS) when not already tracking
+				let newContact: TankBody | null = null;
+				let newContactDist2 = Infinity;
+				if (aiState === 'patrol' || aiState === 'search') {
+					for (const body of tankBodies) {
+						if (body === ownBody || body.hitAt !== null) continue;
+						const bdx = body.x - tankPosition.x,
+							bdz = body.z - tankPosition.z;
+						const bd2 = bdx * bdx + bdz * bdz;
+						if (bd2 < newContactDist2 && aiCanSeeBody(body)) {
+							newContact = body;
+							newContactDist2 = bd2;
+						}
+					}
+					if (newContact !== null) {
+						aiTargetUid = newContact.uid;
+						aiLastSeenX = newContact.x;
+						aiLastSeenZ = newContact.z;
+						aiLastSeenTime = Date.now();
+						aiState = 'engage';
+						aiStopTimer = 0;
+						aiTargetVelX = 0;
+						aiTargetVelZ = 0;
+						aiVelSampleTime = 0;
+						ownBody.lastShellImpact = null;
+						aiAimBiasSpeed = 0;
+						aiAimBiasTurret = 0;
+					}
+				}
+
+				// Maintain LOS contact for tracked target (no FOV restriction)
+				let engageBody: TankBody | null = null;
+				let hasLos = false;
+				if (aiState === 'engage' || aiState === 'cooldown') {
+					for (const body of tankBodies) {
+						if (body.uid === aiTargetUid) {
+							engageBody = body;
+							break;
+						}
+					}
+					if (engageBody === null || engageBody.hitAt !== null) {
+						aiState = 'patrol';
+						aiTargetUid = null;
+					} else {
+						hasLos = aiLosCheck(engageBody.x, engageBody.y, engageBody.z);
+						if (hasLos) {
+							aiLastSeenX = engageBody.x;
+							aiLastSeenZ = engageBody.z;
+							aiLastSeenTime = Date.now();
+						}
+					}
+				}
+
+				if (aiState === 'patrol') {
+					aiPatrolTimer -= delta;
+					if (aiPatrolTimer <= 0) {
+						// Bias toward terrain centre so tanks don't get stranded at borders
+						const toCenter = Math.atan2(tankPosition.x, tankPosition.z);
+						aiPatrolAngle = toCenter + (Math.random() - 0.5) * Math.PI;
+						aiPatrolTimer = 6 + Math.random() * 7;
+					}
+					const hDelta = normalizeAngle(aiPatrolAngle - tankHeading);
+					if (hDelta > 0.12) leftHeld = true;
+					else if (hDelta < -0.12) rightHeld = true;
+					if (Math.abs(hDelta) < 1.2) upHeld = true;
+					// Scan turret in ±60° arc
+					turretHeading += TURRET_SPEED * 0.45 * aiScanDir * delta;
+					if (Math.abs(turretHeading) > Math.PI / 3) {
+						aiScanDir = -aiScanDir;
+						turretHeading = (Math.PI / 3) * Math.sign(turretHeading);
+					}
+					barrelElevation += (0.1 - barrelElevation) * Math.min(1, 3 * delta);
+				} else if (aiState === 'search') {
+					const sdx = aiLastSeenX - tankPosition.x,
+						sdz = aiLastSeenZ - tankPosition.z;
+					if (sdx * sdx + sdz * sdz < 25 * 25) {
+						aiState = 'patrol';
+						aiPatrolTimer = 2;
+					} else {
+						const targetH = Math.atan2(-sdx, -sdz);
+						const hDelta = normalizeAngle(targetH - tankHeading);
+						if (hDelta > 0.12) leftHeld = true;
+						else if (hDelta < -0.12) rightHeld = true;
+						if (Math.abs(hDelta) < 1.2) upHeld = true;
+					}
+					turretHeading += TURRET_SPEED * 0.45 * aiScanDir * delta;
+					if (Math.abs(turretHeading) > Math.PI / 3) {
+						aiScanDir = -aiScanDir;
+						turretHeading = (Math.PI / 3) * Math.sign(turretHeading);
+					}
+				} else if (aiState === 'engage' && engageBody !== null) {
+					const aimX = hasLos ? engageBody.x : aiLastSeenX;
+					const aimZ = hasLos ? engageBody.z : aiLastSeenZ;
+					const aimY = hasLos ? engageBody.y : getTerrainHeight(aiLastSeenX, aiLastSeenZ);
+					const edx = aimX - tankPosition.x,
+						edz = aimZ - tankPosition.z;
+					const eDist = Math.sqrt(edx * edx + edz * edz);
+
+					if (!hasLos && Date.now() - aiLastSeenTime > 2500) {
+						aiState = 'search';
+					} else if (eDist > AI_MAX_ENGAGE_DIST) {
+						// Approach
+						const targetH = Math.atan2(-edx, -edz);
+						const hDelta = normalizeAngle(targetH - tankHeading);
+						if (hDelta > 0.12) leftHeld = true;
+						else if (hDelta < -0.12) rightHeld = true;
+						upHeld = true;
+					} else if (eDist < AI_MIN_ENGAGE_DIST) {
+						// Back away
+						const awayH = Math.atan2(edx, edz);
+						const hDelta = normalizeAngle(awayH - tankHeading);
+						if (hDelta > 0.12) leftHeld = true;
+						else if (hDelta < -0.12) rightHeld = true;
+						upHeld = true;
+					} else {
+						// Good range — stop, aim, fire
+						braking = true;
+						// Sample target velocity every 500 ms while we have LOS
+						if (hasLos) {
+							const nowMs = Date.now();
+							if (aiVelSampleTime > 0 && nowMs - aiVelSampleTime >= 500) {
+								const dt = (nowMs - aiVelSampleTime) / 1000;
+								aiTargetVelX = (engageBody.x - aiVelSampleX) / dt;
+								aiTargetVelZ = (engageBody.z - aiVelSampleZ) / dt;
+							}
+							if (nowMs - aiVelSampleTime >= 500) {
+								aiVelSampleX = engageBody.x;
+								aiVelSampleZ = engageBody.z;
+								aiVelSampleTime = nowMs;
+							}
+						}
+						// Two-pass aim: first pass gives approximate speed and elevation,
+						// second pass leads the target by the estimated flight time.
+						let canHit = aiComputeAim(aimX, aimY, aimZ);
+						if (canHit && (aiTargetVelX !== 0 || aiTargetVelZ !== 0)) {
+							const hd = Math.sqrt(
+								(aimX - tankPosition.x) ** 2 + (aimZ - tankPosition.z) ** 2
+							);
+							const flightTime = hd / Math.max(1, aiFireSpeed * Math.cos(aiTargetElev));
+							const ledCanHit = aiComputeAim(
+								aimX + aiTargetVelX * flightTime,
+								aimY,
+								aimZ + aiTargetVelZ * flightTime
+							);
+							if (!ledCanHit) aiComputeAim(aimX, aimY, aimZ); // restore unled solution
+						}
+						// Add per-shot correction bias on top of the computed aim
+						if (canHit) {
+							aiFireSpeed = Math.max(
+								SHELL_MIN_SPEED,
+								Math.min(SHELL_MAX_SPEED, aiFireSpeed + aiAimBiasSpeed)
+							);
+							aiTargetTurretH += aiAimBiasTurret;
+						}
+						if (canHit) {
+							const tDelta = normalizeAngle(aiTargetTurretH - turretHeading);
+							turretHeading +=
+								Math.sign(tDelta) * Math.min(Math.abs(tDelta), TURRET_SPEED * delta);
+							const bDelta = aiTargetElev - barrelElevation;
+							barrelElevation = Math.max(
+								BARREL_MIN,
+								Math.min(
+									BARREL_MAX,
+									barrelElevation +
+										Math.sign(bDelta) * Math.min(Math.abs(bDelta), BARREL_SPEED * delta)
+								)
+							);
+							const aimed =
+								Math.abs(normalizeAngle(aiTargetTurretH - turretHeading)) < AI_AIM_TOL &&
+								Math.abs(aiTargetElev - barrelElevation) < AI_AIM_TOL;
+							if (aimed && Math.abs(speed) < AI_STOP_SPEED && hasLos) {
+								aiStopTimer += delta;
+								if (aiStopTimer > 0.3) {
+									ownBody.lastShellImpact = null; // clear before new shell can write
+									aiFire();
+									aiState = 'cooldown';
+									aiCooldownTimer = 2 + Math.random() * 1.5;
+									aiStopTimer = 0;
+								}
+							} else {
+								aiStopTimer = 0;
+							}
+						}
+					}
+				} else if (aiState === 'cooldown') {
+					aiCooldownTimer -= delta;
+					// Track turret toward last known position during reload
+					if (aiComputeAim(aiLastSeenX, getTerrainHeight(aiLastSeenX, aiLastSeenZ), aiLastSeenZ)) {
+						const tDelta = normalizeAngle(aiTargetTurretH - turretHeading);
+						turretHeading +=
+							Math.sign(tDelta) * Math.min(Math.abs(tDelta), TURRET_SPEED * delta);
+					}
+					if (aiCooldownTimer <= 0) {
+						// Compute directional correction from where the shell actually landed
+						if (ownBody.lastShellImpact !== null) {
+							const imp = ownBody.lastShellImpact;
+							ownBody.lastShellImpact = null;
+							const fx = tankPosition.x,
+								fz = tankPosition.z;
+							const impDx = imp.x - fx,
+								impDz = imp.z - fz;
+							const tgtDx = aiLastSeenX - fx,
+								tgtDz = aiLastSeenZ - fz;
+							const tgtDist = Math.sqrt(tgtDx * tgtDx + tgtDz * tgtDz);
+							if (tgtDist > 1) {
+								// Project impact onto the target direction so angular misses don't
+								// corrupt the range correction (Euclidean distance gives wrong sign
+								// when the shell lands far to the side of the target).
+								const tgtNx = tgtDx / tgtDist,
+									tgtNz = tgtDz / tgtDist;
+								const impProj = impDx * tgtNx + impDz * tgtNz;
+								// Positive rangeFraction: shell fell short → increase speed; negative: overshot
+								const rangeFraction = (tgtDist - impProj) / tgtDist;
+								aiAimBiasSpeed = Math.max(
+									-10,
+									Math.min(10, rangeFraction * (SHELL_MAX_SPEED - SHELL_MIN_SPEED) * 0.5)
+								);
+								// Angular error: rotate aim toward the target azimuth
+								const impHeading = Math.atan2(-impDx, -impDz);
+								const tgtHeading = Math.atan2(-tgtDx, -tgtDz);
+								aiAimBiasTurret = normalizeAngle(tgtHeading - impHeading) * 0.7;
+							}
+						} else {
+							// Shot hit a tank — aim was good; don't carry stale corrections into next shot
+							aiAimBiasSpeed = 0;
+							aiAimBiasTurret = 0;
+						}
+						aiState = hasLos ? 'engage' : 'search';
+					}
+				}
 			}
 		}
 

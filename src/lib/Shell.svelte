@@ -3,17 +3,20 @@
 	import { T, useTask } from '@threlte/core';
 	import { getContext, onDestroy } from 'svelte';
 	import Splash from './Splash.svelte';
+	import type { TankBody } from './types';
 
 	let {
 		position,
 		velocity,
 		excludeBodyUid = undefined,
+		tracked = false,
 		onremove,
 		onimpact
 	}: {
 		position: THREE.Vector3;
 		velocity: THREE.Vector3;
 		excludeBodyUid?: number;
+		tracked?: boolean;
 		onremove?: () => void;
 		onimpact?: (position: THREE.Vector3) => void;
 	} = $props();
@@ -21,16 +24,7 @@
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
 	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
-	const tankBodies = getContext<
-		Array<{
-			uid: number;
-			x: number;
-			y: number;
-			z: number;
-			hitAt: number | null;
-			lastHit: { dist: number; wx: number; wz: number; splash?: boolean } | null;
-		}>
-	>('tankBodies');
+	const tankBodies = getContext<TankBody[]>('tankBodies');
 	type TreeVol = { x: number; z: number; y: number; top: number; canopyR: number };
 	const forNearbyTreeVolumes = getContext<
 		(x: number, z: number, fn: (vol: TreeVol) => boolean) => void
@@ -54,7 +48,7 @@
 	// pos is updated in-place each frame, so shellFollow.pos stays in sync automatically.
 	// Scene will overwrite this reference with the impact-point clone when the shell lands,
 	// and null it out when the full sequence (explosion) completes.
-	if (shellFollow) shellFollow.pos = pos;
+	if (tracked && shellFollow) shellFollow.pos = pos;
 
 	const shellGeo = new THREE.CylinderGeometry(0.035, 0.055, 0.38, 8);
 	const shellMat = new THREE.MeshStandardMaterial({
@@ -87,14 +81,7 @@
 	// The hit is not declared until the shell starts moving away (dist > minDist) or exits the cylinder,
 	// so minDist reflects the actual closest pass rather than always measuring at the outer boundary.
 	interface PendingHit {
-		body: {
-			uid: number;
-			x: number;
-			y: number;
-			z: number;
-			hitAt: number | null;
-			lastHit: { dist: number; wx: number; wz: number; splash?: boolean } | null;
-		};
+		body: TankBody;
 		minDist: number;
 		minWx: number;
 		minWz: number;
@@ -114,6 +101,17 @@
 		}
 		pendingHits.length = 0;
 		return false;
+	}
+
+	// Write the terrain/tree impact point to the firer's body so the AI can compute a correction
+	function recordImpact() {
+		if (excludeBodyUid === undefined) return;
+		for (const body of tankBodies) {
+			if (body.uid === excludeBodyUid) {
+				body.lastShellImpact = { x: pos.x, z: pos.z };
+				return;
+			}
+		}
 	}
 
 	let splashes = $state<SplashEntry[]>([]);
@@ -208,6 +206,7 @@
 				const dx = pos.x - vol.x;
 				const dz = pos.z - vol.z;
 				if (dx * dx + dz * dz < vol.canopyR * vol.canopyR && pos.y > vol.y && pos.y < vol.top) {
+					recordImpact();
 					onimpact?.(pos.clone());
 					done = true;
 					if (groupRef) groupRef.visible = false;
@@ -231,6 +230,7 @@
 			if (pos.y <= groundY) {
 				// If already inside a tank's cylinder, register a tank hit instead of a terrain explosion
 				if (flushPendingHit()) return;
+				recordImpact();
 				onimpact?.(pos.clone());
 				done = true;
 				if (groupRef) groupRef.visible = false;

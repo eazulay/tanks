@@ -37,6 +37,10 @@
 			(tankHealthData[0]?.destroyed || tankHealthData.filter((d) => !d.destroyed).length <= 1)
 	);
 	let playerWon = $derived(gameOver && !tankHealthData[0]?.destroyed);
+	// Opponents keep fighting each other until only one survives
+	let allGameOver = $derived(
+		tankHealthData.length > 0 && tankHealthData.filter((d) => !d.destroyed).length <= 1
+	);
 
 	function restartGame() {
 		restartKey++;
@@ -172,7 +176,7 @@
 <div class="game-container">
 	<Canvas shadows>
 		{#key restartKey}
-			<Scene {opponentCount} bind:tankHealthData {gameOver} />
+			<Scene {opponentCount} bind:tankHealthData {gameOver} {allGameOver} />
 		{/key}
 	</Canvas>
 
