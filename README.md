@@ -1,38 +1,45 @@
-# sv
+# Tank Royale
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+A 3D tank combat game built with SvelteKit and Three.js. Fight against up to three AI opponents across procedurally generated terrain with hills, water, forests, and snow-capped peaks.
 
-## Creating a project
+## Gameplay
 
-If you're seeing this, you've probably already done this step. Congrats!
+You control a tank on a shared battlefield. All tanks spawn on the perimeter facing along the circle. Last tank standing wins.
+
+**Movement**
+
+| Key   | Action                  |
+| ----- | ----------------------- |
+| W / S | Drive forward / reverse |
+| A / D | Steer left / right      |
+| X     | Brake to a stop         |
+
+**Aiming**
+
+| Input                     | Action                           |
+| ------------------------- | -------------------------------- |
+| Mouse (with pointer lock) | Rotate turret and elevate barrel |
+| Arrow left / right        | Rotate turret                    |
+| Arrow up / down           | Elevate / depress barrel         |
+| Z                         | Toggle 5× zoom (finer aim)       |
+
+**Firing**
+
+Hold **left mouse button** or **Space** to charge the shot — a velocity bar fills over 2 seconds. Release to fire. The bar pulses gold at full charge and auto-cancels after half a second if you hold too long. A 2-second reload follows each shot.
+
+**Camera**
+
+The camera tracks behind the barrel. In zoom mode, it follows the shell in flight and holds on the impact point until the explosion clears.
+
+**Click "Mouse Control"** on the start panel to enable pointer lock and mouse aim, or use arrow keys without it.
+
+## Running locally
 
 ```bash
-# create a new project in the current directory
-npx sv create
-
-# create a new project in my-app
-npx sv create my-app
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```bash
+git clone https://github.com/eazulay/tanks
+cd tanks
+npm install
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
-
-To create a production version of your app:
-
-```bash
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+Then open [http://localhost:5173](http://localhost:5173) in your browser.

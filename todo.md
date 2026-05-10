@@ -1,3 +1,4 @@
 **TO DO**
 
-- Improve AI strategy
+- Make the game survive page refresh
+- Make it possible to play against other humans.
