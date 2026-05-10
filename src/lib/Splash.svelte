@@ -23,7 +23,9 @@
 				transparent: true,
 				opacity: 0,
 				depthWrite: false,
-				depthTest: false,
+				polygonOffset: true,
+				polygonOffsetFactor: -1,
+				polygonOffsetUnits: -1,
 				side: THREE.DoubleSide
 			})
 	);
