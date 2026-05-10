@@ -336,7 +336,7 @@
 
 	// --- AI constants (non-controlled tanks only) ---
 	const AI_VISION_RANGE = 400;
-	const AI_MIN_ENGAGE_DIST = 35; // back away if closer than this
+	const AI_MIN_ENGAGE_DIST = 25; // back away if closer than this
 	const AI_MAX_ENGAGE_DIST = 350; // approach if farther than this
 	const AI_AIM_TOL = 0.05; // radians within aim target before firing
 	const AI_STOP_SPEED = 0.6; // must be slower than this to fire
@@ -887,50 +887,62 @@
 						if (hDelta > 0.12) leftHeld = true;
 						else if (hDelta < -0.12) rightHeld = true;
 						upHeld = true;
-					} else if (eDist < effectiveMinDist) {
-						// Back away
-						const awayH = Math.atan2(edx, edz);
-						const hDelta = normalizeAngle(awayH - tankHeading);
-						if (hDelta > 0.12) leftHeld = true;
-						else if (hDelta < -0.12) rightHeld = true;
-						upHeld = true;
 					} else {
-						// Good range — find flat ground, then aim and fire.
-						// On a sloped platform the barrel's world-space elevation differs from
-						// barrelElevation by up to tankPitch/tankRoll, throwing off the ballistic
-						// solution. Creep along the terrain contour until the ground is level enough.
+						// Back-away or good-range: both track the turret and fire.
 						const slopeMag = Math.hypot(tankPitch, tankRoll);
 						const onSlope = slopeMag > AI_MAX_FIRE_SLOPE;
-						if (onSlope) {
-							// Drive along the terrain contour (perpendicular to steepest-ascent
-							// direction) so the AI traverses the slope rather than climbing it.
-							// Contour direction = gradient rotated 90°; pick the sign that faces
-							// roughly toward the target so the AI doesn't wander away.
-							const sf = Math.tan(tankPitch),
-								sr = Math.tan(tankRoll);
-							const sinH = Math.sin(tankHeading),
-								cosH = Math.cos(tankHeading);
-							// Gradient in world XZ: gx = -sf*sinH + sr*cosH, gz = -sf*cosH - sr*sinH
-							// Contour = rotate gradient 90° CCW (viewed top-down): (-gz, gx)
-							const c1x = sf * cosH + sr * sinH;
-							const c1z = -sf * sinH + sr * cosH;
-							const towardTarget = c1x * edx + c1z * edz;
-							const cx = towardTarget >= 0 ? c1x : -c1x;
-							const cz = towardTarget >= 0 ? c1z : -c1z;
-							const contourH = Math.atan2(-cx, -cz);
-							const hDelta = normalizeAngle(contourH - tankHeading);
+						const tooClose = eDist < effectiveMinDist;
+
+						if (tooClose) {
+							// Too close — back away while keeping the turret on the target.
+							// If a hill blocks the direct flee path, redirect 90° sideways to get around it.
+							const awayH = Math.atan2(edx, edz);
+							const fleeH =
+								aiStuckTimer > AI_STUCK_TIMEOUT
+									? awayH + aiStuckTurnDir * (Math.PI / 2)
+									: awayH;
+							const hDelta = normalizeAngle(fleeH - tankHeading);
 							if (hDelta > 0.12) leftHeld = true;
 							else if (hDelta < -0.12) rightHeld = true;
-							// Creep slowly so the tank can stop on the first flat patch it finds
-							if (Math.abs(speed) > AI_SLOPE_CREEP_SPEED) {
-								braking = true;
-							} else {
-								upHeld = true;
-							}
+							upHeld = true;
 						} else {
-							braking = true;
+							// Good range — find flat ground, then stop and fire.
+							// On a sloped platform the barrel's world-space elevation differs from
+							// barrelElevation by up to tankPitch/tankRoll, throwing off the ballistic
+							// solution. Creep along the terrain contour until the ground is level enough.
+							if (onSlope) {
+								// Drive along the terrain contour (perpendicular to steepest-ascent
+								// direction) so the AI traverses the slope rather than climbing it.
+								// Contour direction = gradient rotated 90°; pick the sign that faces
+								// roughly toward the target so the AI doesn't wander away.
+								const sf = Math.tan(tankPitch),
+									sr = Math.tan(tankRoll);
+								const sinH = Math.sin(tankHeading),
+									cosH = Math.cos(tankHeading);
+								// Gradient in world XZ: gx = -sf*sinH + sr*cosH, gz = -sf*cosH - sr*sinH
+								// Contour = rotate gradient 90° CCW (viewed top-down): (-gz, gx)
+								const c1x = sf * cosH + sr * sinH;
+								const c1z = -sf * sinH + sr * cosH;
+								const towardTarget = c1x * edx + c1z * edz;
+								const cx = towardTarget >= 0 ? c1x : -c1x;
+								const cz = towardTarget >= 0 ? c1z : -c1z;
+								const contourH = Math.atan2(-cx, -cz);
+								const hDelta = normalizeAngle(contourH - tankHeading);
+								if (hDelta > 0.12) leftHeld = true;
+								else if (hDelta < -0.12) rightHeld = true;
+								// Creep slowly so the tank can stop on the first flat patch it finds
+								if (Math.abs(speed) > AI_SLOPE_CREEP_SPEED) {
+									braking = true;
+								} else {
+									upHeld = true;
+								}
+							} else {
+								braking = true;
+							}
 						}
-						// Sample target velocity every 500 ms while we have LOS
+
+						// Aim and fire — runs for both back-away and good-range.
+						// Sample target velocity every 500 ms while we have LOS.
 						if (hasLos) {
 							const nowMs = Date.now();
 							if (aiVelSampleTime > 0 && nowMs - aiVelSampleTime >= 500) {
@@ -983,7 +995,12 @@
 							const aimed =
 								Math.abs(normalizeAngle(aiTargetTurretH - turretHeading)) < AI_AIM_TOL &&
 								Math.abs(aiTargetElev - barrelElevation) < AI_AIM_TOL;
-							if (aimed && Math.abs(speed) < AI_STOP_SPEED && hasLos && !onSlope) {
+							// Close range: fire while moving (no speed or slope gate).
+							// Good range: require stopped on flat ground.
+							const fireOk = tooClose
+								? aimed && hasLos
+								: aimed && Math.abs(speed) < AI_STOP_SPEED && hasLos && !onSlope;
+							if (fireOk) {
 								aiStopTimer += delta;
 								if (aiStopTimer > 0.3) {
 									ownBody.lastShellImpact = null; // clear before new shell can write
