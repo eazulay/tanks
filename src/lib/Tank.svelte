@@ -341,6 +341,7 @@
 	const AI_AIM_TOL = 0.05; // radians within aim target before firing
 	const AI_STOP_SPEED = 0.6; // must be slower than this to fire
 	const AI_MAX_FIRE_SLOPE = 0.15; // max combined pitch+roll (rad) before seeking flatter ground
+	const AI_SLOPE_CREEP_SPEED = 3; // m/s crawl speed while seeking flat ground inside engagement range
 	const CUPOLA_H = 1.6; // cupola-top Y above tankPosition.y for LOS origin/target
 	const AI_REPOSITION_MISSES = 3; // consecutive misses before closing or opening the engagement range
 	const AI_STUCK_TIMEOUT = 1.5; // seconds of blocked movement before attempting a terrain detour
@@ -451,16 +452,20 @@
 		return a;
 	}
 
-	// Terrain line-of-sight: cupola top → target cupola top, 16 sample points
+	// Terrain line-of-sight: cupola top → target cupola top.
+	// Steps scaled to distance so the gap between samples never exceeds one terrain cell (5 u),
+	// preventing a narrow hilltop from slipping between two checks at long range.
 	function aiLosCheck(tx: number, ty: number, tz: number): boolean {
 		const sx = tankPosition.x,
 			sy = tankPosition.y + CUPOLA_H,
 			sz = tankPosition.z;
+		const dx = tx - sx,
+			dz = tz - sz;
 		const ey = ty + CUPOLA_H;
-		for (let i = 1; i < 16; i++) {
-			const t = i / 16;
-			if (getTerrainHeight(sx + (tx - sx) * t, sz + (tz - sz) * t) > sy + (ey - sy) * t)
-				return false;
+		const steps = Math.max(16, Math.ceil(Math.sqrt(dx * dx + dz * dz) / 5));
+		for (let i = 1; i < steps; i++) {
+			const t = i / steps;
+			if (getTerrainHeight(sx + dx * t, sz + dz * t) > sy + (ey - sy) * t) return false;
 		}
 		return true;
 	}
@@ -916,7 +921,12 @@
 							const hDelta = normalizeAngle(contourH - tankHeading);
 							if (hDelta > 0.12) leftHeld = true;
 							else if (hDelta < -0.12) rightHeld = true;
-							upHeld = true;
+							// Creep slowly so the tank can stop on the first flat patch it finds
+							if (Math.abs(speed) > AI_SLOPE_CREEP_SPEED) {
+								braking = true;
+							} else {
+								upHeld = true;
+							}
 						} else {
 							braking = true;
 						}
