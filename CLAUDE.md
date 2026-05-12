@@ -92,10 +92,11 @@ wheelSpinRight += (speed + angVel * factor) * delta;
 
 **Track animation speed (`Tank.svelte`):** `spinSpeed` uses `max(speed, accelSpin)` (forward) / `min(speed, accelSpin)` (backward) rather than `speed + accelSpin`. This keeps wheel animation proportional to actual movement when coasting, while still spinning visibly when slope blocks movement (speed=0 but key held). Direction is resolved via `spinDir = speed !== 0 ? sign(speed) : sign(accelSpin)` to handle the standstill case correctly.
 
-**Controls (`Tank.svelte`):**
+**Controls (`Tank.svelte`, `+page.svelte`):**
 - `W`/`S` — drive forward/back; `A`/`D` — steer left/right (hull)
 - `X` — handbrake: one tap decelerates to a full stop (`BRAKE_DECEL = 6`); cancelled early by pressing `W` or `S`
 - `Z` — toggle zoom mode: narrows FOV from 50° → 15° (smooth lerp, `ZOOM_FOV_LERP=8`) and reduces aim sensitivity 4× (`ZOOM_AIM_FACTOR=0.25`) for both mouse and arrow keys
+- `M` — toggle mute (handled in `+page.svelte`): calls `THREE.AudioContext.getContext().suspend()/resume()` to globally mute/unmute all Three.js audio; `muted` state shown in locked hint and as a Mute/Unmute button in the help panel
 - Arrow left/right — rotate turret; arrow up/down — elevate/depress barrel (clamped to −10°/+40°)
 - Mouse (when pointer-locked) — aim turret/barrel; directly updates `turretHeading`/`barrelElevation`
 
@@ -217,6 +218,8 @@ The cupola sits in the turret group (rotates with turret azimuth) but outside th
 **Sky background (`Scene.svelte`):** `scene.background` is set once to sky colour `#87CEEB` via `useThrelte().scene`. No per-frame switching — the matching opacity between the water surface and skirts makes the underwater view look consistent without needing to change the background colour.
 
 **HTML overlays over Canvas:** Wrap `<Canvas>` in a `position: relative` div; overlay divs use `position: absolute; z-index: 10`. The game overlay uses `pointer-events: none` on the container and `pointer-events: auto` on the panel so the canvas remains interactive behind it. The charge bar uses `z-index: 20` and is always rendered when `chargeVisible`, independently of the lock state overlay.
+
+**Mute system:** `muted` state lives in `+page.svelte` (game). Toggled by M key or the Mute/Unmute button in the help panel. Passed as a prop to `Scene.svelte`, which calls `getAudioListener()?.setMasterVolume(muted ? 0 : 1)` in a `$effect` — this controls the `THREE.AudioListener` master gain node, which all positional audio passes through. `AudioContext.suspend()` is deliberately NOT used because Threlte's `play()` calls `context.resume()` internally on every sound, immediately overriding a suspend. The landing page (`src/routes/+page.svelte`) also has a "Mute Sounds" checkbox; if checked, `&muted=1` is appended to the game URL and the game page initialises `muted = $state(true)` from the query param.
 
 **Audio system (`Scene.svelte`, `Tank.svelte`, `Shell.svelte`, `Tree.svelte`):** Positional stereo audio via `@threlte/extras` declarative components (`AudioListener`, `PositionalAudio`). `PositionalAudio` handles buffer loading, AudioContext resume on play, and cleanup on `onDestroy` automatically. No manual `THREE.AudioLoader` or context setup needed. Audio files are `.mp3` only (`static/audio/`).
 - **Setup:** No audio code in `Scene.svelte`. `@threlte/extras` uses a module-level Map (`useThrelteAudio`) so all `<PositionalAudio>` components in the scene find the single `<AudioListener>` automatically by id (default `"default"`).

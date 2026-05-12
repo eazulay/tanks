@@ -7,6 +7,7 @@
 		3,
 		Math.max(1, parseInt(page.url.searchParams.get('opponents') ?? '1', 10))
 	);
+	const startMuted = page.url.searchParams.get('muted') === '1';
 
 	interface TankHealthEntry {
 		health: number;
@@ -31,6 +32,11 @@
 	let mouseHeld = false;
 	let reloadProgress = $state(1);
 	let reloadStart = $state<number | null>(null);
+	let muted = $state(startMuted);
+
+	function toggleMute() {
+		muted = !muted;
+	}
 
 	let gameOver = $derived(
 		tankHealthData.length > 0 &&
@@ -131,6 +137,7 @@
 				spaceHeld = true;
 				startCharge();
 			}
+			if (e.code === 'KeyM') toggleMute();
 		};
 		const onKeyUp = (e: KeyboardEvent) => {
 			if (e.code === 'Space' && spaceHeld) {
@@ -176,7 +183,7 @@
 <div class="game-container">
 	<Canvas shadows>
 		{#key restartKey}
-			<Scene {opponentCount} bind:tankHealthData {gameOver} {allGameOver} />
+			<Scene {opponentCount} bind:tankHealthData {gameOver} {allGameOver} {muted} />
 		{/key}
 	</Canvas>
 
@@ -240,8 +247,8 @@
 		<div class="overlay">
 			<p class="hint">
 				WASD · drive &nbsp;|&nbsp; X · stop &nbsp;|&nbsp; Mouse / arrows · aim &nbsp;|&nbsp; Z ·
-				zoom &nbsp;|&nbsp; Hold LMB / Space · charge, release · fire &nbsp;|&nbsp; Esc · release
-				mouse
+				zoom &nbsp;|&nbsp; Hold LMB / Space · charge, release · fire &nbsp;|&nbsp; M ·
+				{muted ? 'unmute' : 'mute'} &nbsp;|&nbsp; Esc · release mouse
 			</p>
 		</div>
 	{:else}
@@ -254,12 +261,14 @@
 						<li>Mouse / arrows · aim</li>
 						<li>Z · zoom (5× finer aim)</li>
 						<li>Hold LMB / Space · charge, release · fire</li>
+						<li>M · mute / unmute</li>
 						<li>Esc · release mouse</li>
 					</ul>
 					<div class="buttons">
 						<button class="green-btn" onclick={() => document.documentElement.requestPointerLock()}
 							>Mouse Control</button
 						>
+						<button onclick={toggleMute}>{muted ? 'Unmute' : 'Mute'}</button>
 						<button onclick={restartGame}>Restart</button>
 						<a href="/" class="button">Quit</a>
 					</div>

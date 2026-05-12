@@ -436,7 +436,8 @@
 		zoomedAtFireTime = zoomed;
 		_scratchEuler.set(tankPitch, 0, tankRoll, 'XYZ');
 		// Muzzle world position: tip of barrel at z=-2.25 in elevation-group local space
-		const muzzle = _scratchVec3.set(0, 0, -2.25)
+		const muzzle = _scratchVec3
+			.set(0, 0, -2.25)
 			.applyAxisAngle(_X_AXIS, barrelElevation)
 			.add(_PIVOT_OFFSET)
 			.applyAxisAngle(_Y_AXIS, turretHeading)
@@ -531,7 +532,8 @@
 	// Fire a shell using the current barrel aim — mirrors fire() but uses aiFireSpeed
 	function aiFire() {
 		_scratchEuler.set(tankPitch, 0, tankRoll, 'XYZ');
-		const muzzle = _scratchVec3.set(0, 0, -2.25)
+		const muzzle = _scratchVec3
+			.set(0, 0, -2.25)
 			.applyAxisAngle(_X_AXIS, barrelElevation)
 			.add(_PIVOT_OFFSET)
 			.applyAxisAngle(_Y_AXIS, turretHeading)
@@ -821,7 +823,7 @@
 					}
 				}
 
-				// Maintain LOS contact for tracked target (no FOV restriction)
+				// Maintain Line Of Sight contact for tracked target
 				let engageBody: TankBody | null = null;
 				let hasLos = false;
 				if (aiState === 'engage' || aiState === 'cooldown') {
@@ -846,9 +848,13 @@
 							if (bdx * bdx + bdz * bdz < engageDist2 && aiLosCheck(body.x, body.y, body.z)) {
 								aiTargetUid = body.uid;
 								engageBody = body;
-								aiTargetVelX = 0; aiTargetVelZ = 0; aiVelSampleTime = 0;
+								aiTargetVelX = 0;
+								aiTargetVelZ = 0;
+								aiVelSampleTime = 0;
 								ownBody.lastShellImpact = null;
-								aiAimBiasSpeed = 0; aiAimBiasTurret = 0; aiMissCount = 0;
+								aiAimBiasSpeed = 0;
+								aiAimBiasTurret = 0;
+								aiMissCount = 0;
 								break;
 							}
 						}
@@ -950,9 +956,7 @@
 							// If a hill blocks the direct flee path, redirect 90° sideways to get around it.
 							const awayH = Math.atan2(edx, edz);
 							const fleeH =
-								aiStuckTimer > AI_STUCK_TIMEOUT
-									? awayH + aiStuckTurnDir * (Math.PI / 2)
-									: awayH;
+								aiStuckTimer > AI_STUCK_TIMEOUT ? awayH + aiStuckTurnDir * (Math.PI / 2) : awayH;
 							const hDelta = normalizeAngle(fleeH - tankHeading);
 							if (hDelta > 0.12) leftHeld = true;
 							else if (hDelta < -0.12) rightHeld = true;
@@ -964,8 +968,7 @@
 							const escapeTurretH = normalizeAngle(Math.atan2(-edx, -edz) - tankHeading);
 							const escapeTDelta = normalizeAngle(escapeTurretH - turretHeading);
 							turretHeading +=
-								Math.sign(escapeTDelta) *
-								Math.min(Math.abs(escapeTDelta), TURRET_SPEED * delta);
+								Math.sign(escapeTDelta) * Math.min(Math.abs(escapeTDelta), TURRET_SPEED * delta);
 						} else {
 							// Good range — find flat ground, then stop and fire.
 							// On a sloped platform the barrel's world-space elevation differs from
@@ -1021,9 +1024,7 @@
 						// second pass leads the target by the estimated flight time.
 						let canHit = aiComputeAim(aimX, aimY, aimZ);
 						if (canHit && (aiTargetVelX !== 0 || aiTargetVelZ !== 0)) {
-							const hd = Math.sqrt(
-								(aimX - tankPosition.x) ** 2 + (aimZ - tankPosition.z) ** 2
-							);
+							const hd = Math.sqrt((aimX - tankPosition.x) ** 2 + (aimZ - tankPosition.z) ** 2);
 							const flightTime = hd / Math.max(1, aiFireSpeed * Math.cos(aiTargetElev));
 							const ledCanHit = aiComputeAim(
 								aimX + aiTargetVelX * flightTime,
@@ -1042,8 +1043,7 @@
 						}
 						if (canHit) {
 							const tDelta = normalizeAngle(aiTargetTurretH - turretHeading);
-							turretHeading +=
-								Math.sign(tDelta) * Math.min(Math.abs(tDelta), TURRET_SPEED * delta);
+							turretHeading += Math.sign(tDelta) * Math.min(Math.abs(tDelta), TURRET_SPEED * delta);
 							const bDelta = aiTargetElev - barrelElevation;
 							barrelElevation = Math.max(
 								BARREL_MIN,
@@ -1085,8 +1085,7 @@
 					if (cdx * cdx + cdz * cdz >= 1) {
 						const trackH = normalizeAngle(Math.atan2(-cdx, -cdz) - tankHeading);
 						const tDelta = normalizeAngle(trackH - turretHeading);
-						turretHeading +=
-							Math.sign(tDelta) * Math.min(Math.abs(tDelta), TURRET_SPEED * delta);
+						turretHeading += Math.sign(tDelta) * Math.min(Math.abs(tDelta), TURRET_SPEED * delta);
 						if (
 							aiComputeAim(aiLastSeenX, getTerrainHeight(aiLastSeenX, aiLastSeenZ), aiLastSeenZ)
 						) {
@@ -1448,12 +1447,7 @@
 			refDistance={30}
 			playbackRate={enginePlaybackRate}
 		/>
-		<PositionalAudio
-			src="/audio/shot.mp3"
-			bind:this={shotRef}
-			refDistance={40}
-			maxDistance={600}
-		/>
+		<PositionalAudio src="/audio/shot.mp3" bind:this={shotRef} refDistance={40} maxDistance={600} />
 	{/if}
 
 	<T.Group rotation.x={tankPitch} rotation.z={tankRoll}>

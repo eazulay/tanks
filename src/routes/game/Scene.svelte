@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
 	import { T, useThrelte } from '@threlte/core';
+	import { useThrelteAudio } from '@threlte/extras';
 	import { setContext, onDestroy } from 'svelte';
 	import Tank from '$lib/Tank.svelte';
 	import Shell from '$lib/Shell.svelte';
@@ -18,13 +19,22 @@
 		opponentCount = 1,
 		tankHealthData = $bindable<TankHealthEntry[]>([]),
 		gameOver = false,
-		allGameOver = false
+		allGameOver = false,
+		muted = false
 	}: {
 		opponentCount?: number;
 		tankHealthData?: TankHealthEntry[];
 		gameOver?: boolean;
 		allGameOver?: boolean;
+		muted?: boolean;
 	} = $props();
+
+	// getAudioListener must be obtained at init time (uses Svelte context internally)
+	const { getAudioListener } = useThrelteAudio();
+	$effect(() => {
+		// muted prop changed; listener is available once the player Tank has mounted
+		getAudioListener()?.setMasterVolume(muted ? 0 : 1);
+	});
 
 	const { scene } = useThrelte();
 	scene.background = new THREE.Color('#87CEEB');

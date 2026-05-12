@@ -27,9 +27,10 @@
 	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
 	const tankBodies = getContext<TankBody[]>('tankBodies');
 	type TreeVol = { x: number; z: number; y: number; top: number; canopyR: number };
-	const forNearbyTreeVolumes = getContext<
-		(x: number, z: number, fn: (vol: TreeVol) => boolean) => void
-	>('forNearbyTreeVolumes');
+	const forNearbyTreeVolumes =
+		getContext<(x: number, z: number, fn: (vol: TreeVol) => boolean) => void>(
+			'forNearbyTreeVolumes'
+		);
 	let whistleRef: { stop: () => unknown } | undefined;
 
 	const GRAVITY = 10;
@@ -170,7 +171,10 @@
 			// Advance existing pending approaches
 			for (let i = pendingHits.length - 1; i >= 0; i--) {
 				const p = pendingHits[i];
-				if (p.body.hitAt !== null) { pendingHits.splice(i, 1); continue; }
+				if (p.body.hitAt !== null) {
+					pendingHits.splice(i, 1);
+					continue;
+				}
 				const dx = pos.x - p.body.x;
 				const dz = pos.z - p.body.z;
 				const dist = Math.sqrt(dx * dx + dz * dz);
@@ -197,7 +201,8 @@
 				const distSq = dx * dx + dz * dz;
 				if (distSq < HIT_RADIUS * HIT_RADIUS && Math.abs(pos.y - body.y) < HIT_HEIGHT) {
 					// Firer grace: UID comparison (not object ref — Svelte $state proxies break ===)
-					if (excludeBodyUid !== undefined && body.uid === excludeBodyUid && firerGraceTimer > 0) continue;
+					if (excludeBodyUid !== undefined && body.uid === excludeBodyUid && firerGraceTimer > 0)
+						continue;
 					pendingHits.push({ body, minDist: Math.sqrt(distSq), minWx: pos.x, minWz: pos.z });
 				}
 			}
@@ -255,9 +260,9 @@
 		loop
 		autoplay
 		bind:this={whistleRef}
-		refDistance={20}
-		maxDistance={400}
-		volume={0.5}
+		refDistance={80}
+		maxDistance={600}
+		volume={1}
 	/>
 </T.Group>
 

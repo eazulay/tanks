@@ -1,5 +1,6 @@
 <script lang="ts">
 	let opponents = $state(1);
+	let muted = $state(false);
 </script>
 
 <main>
@@ -22,9 +23,14 @@
 					{/each}
 				</div>
 			</div>
+			<label class="mute-row">
+				<input type="checkbox" bind:checked={muted} />
+				<span class="mute-box" class:checked={muted}></span>
+				Mute Sounds
+			</label>
 		</div>
 
-		<a href="/game?opponents={opponents}" class="start-btn">Start Game</a>
+		<a href="/game?opponents={opponents}{muted ? '&muted=1' : ''}" class="start-btn">Start Game</a>
 	</div>
 </main>
 
@@ -76,7 +82,7 @@
 		font-family: 'Bebas Neue', sans-serif;
 		font-size: 0.85rem;
 		letter-spacing: 0.18em;
-		color: #7a8a6a;
+		color: #a8b89a;
 		margin-bottom: 0.65rem;
 	}
 
@@ -121,6 +127,61 @@
 		pointer-events: none;
 		width: 0;
 		height: 0;
+	}
+
+	.mute-row {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.55rem;
+		cursor: pointer;
+		font-family: 'Inter', sans-serif;
+		font-size: 0.9rem;
+		color: #a8b89a;
+		user-select: none;
+		margin-top: 1rem;
+	}
+
+	.mute-row:hover {
+		color: #c8d8b8;
+	}
+
+	.mute-row input {
+		position: absolute;
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+
+	.mute-box {
+		width: 15px;
+		height: 15px;
+		border: 1px solid #3a4a2a;
+		border-radius: 3px;
+		background: rgba(15, 22, 8, 0.7);
+		flex-shrink: 0;
+		transition:
+			background 0.15s,
+			border-color 0.15s;
+	}
+
+	.mute-row:hover .mute-box {
+		border-color: #5a6a4a;
+	}
+
+	.mute-box.checked {
+		background: #d4a832;
+		border-color: #d4a832;
+	}
+
+	.mute-box.checked::after {
+		content: '';
+		display: block;
+		width: 4px;
+		height: 8px;
+		border: 2px solid #0a0f05;
+		border-top: none;
+		border-left: none;
+		transform: translate(5px, 1px) rotate(45deg);
 	}
 
 	.start-btn {
