@@ -10,7 +10,8 @@
       "WebFetch(domain:threlte.xyz)",
       "WebSearch",
       "WebFetch(domain:threlte.vercel.app)",
-      "Bash(npm list *)"
+      "Bash(npm list *)",
+      "Bash(npm show *)"
     ]
   }
 }

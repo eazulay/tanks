@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
 	import { useTask, useThrelte } from '@threlte/core';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 
 	let {
 		x,
@@ -22,6 +22,8 @@
 		scale?: number;
 		burnDuration?: number;
 	} = $props();
+
+	const _scale = untrack(() => scale);
 
 	const { scene, renderer, camera } = useThrelte();
 
@@ -45,7 +47,7 @@
 	const flames: FlameData[] = [];
 
 	for (const d of defs) {
-		const geo = new THREE.ConeGeometry(d.r * scale, d.h * scale, 6);
+		const geo = new THREE.ConeGeometry(d.r * _scale, d.h * _scale, 6);
 		const warm = Math.random() > 0.5;
 		const mat = new THREE.MeshStandardMaterial({
 			color: warm ? 0xffaa00 : 0xff5500,
@@ -56,13 +58,13 @@
 			depthWrite: false
 		});
 		const mesh = new THREE.Mesh(geo, mat);
-		mesh.position.set(d.x * scale, (d.h * scale) / 2, d.z * scale);
+		mesh.position.set(d.x * _scale, (d.h * _scale) / 2, d.z * _scale);
 		flames.push({ mesh, mat, phase: d.phase, speed: 5 + Math.random() * 5 });
 		group.add(mesh);
 	}
 
-	const light = new THREE.PointLight(0xff6600, 0, 22 * Math.max(1, scale), 1.5);
-	light.position.set(0, 2.5 * scale, 0);
+	const light = new THREE.PointLight(0xff6600, 0, 22 * Math.max(1, _scale), 1.5);
+	light.position.set(0, 2.5 * _scale, 0);
 	group.add(light);
 	group.visible = false;
 	scene.add(group);

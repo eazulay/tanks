@@ -2,7 +2,7 @@
 	import * as THREE from 'three';
 	import { T, useTask } from '@threlte/core';
 	import { PositionalAudio } from '@threlte/extras';
-	import { getContext, onDestroy } from 'svelte';
+	import { getContext, onDestroy, untrack } from 'svelte';
 	import Splash from './Splash.svelte';
 
 	let {
@@ -33,11 +33,15 @@
 		onremove?: () => void;
 	} = $props();
 
+	const _tankExplosion = untrack(() => tankExplosion);
+	const _craterDepth = untrack(() => craterDepth);
+	const _debrisColor = untrack(() => debrisColor);
+
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
 
 	const FIREBALL_DURATION = 0.6;
-	const FIREBALL_MAX_RADIUS = tankExplosion ? 3.5 : 2.5;
+	const FIREBALL_MAX_RADIUS = _tankExplosion ? 3.5 : 2.5;
 	const GRAVITY = 10;
 	const DEBRIS_COUNT = 10;
 
@@ -50,18 +54,18 @@
 	const PANEL_DRAG_VERT = 0.30;
 	const PANEL_DRAG_SPIN = 0.06;
 	const DEBRIS_MAX_TIME = 3.5;
-	const raisePerRock = craterDepth / DEBRIS_COUNT;
+	const raisePerRock = _craterDepth / DEBRIS_COUNT;
 
 	const fireballGeo = new THREE.SphereGeometry(1, 16, 12);
 	const fireballMat = new THREE.MeshBasicMaterial({ color: '#ff6600', transparent: true });
 	let fireballRef: THREE.Mesh | null = null;
 
 	// Geometry and material differ by explosion type
-	const debrisGeo = tankExplosion
+	const debrisGeo = _tankExplosion
 		? new THREE.BoxGeometry(1, 1, 1)
 		: new THREE.IcosahedronGeometry(1, 0);
-	const debrisMat = tankExplosion
-		? new THREE.MeshStandardMaterial({ color: debrisColor, roughness: 0.5, metalness: 0.8 })
+	const debrisMat = _tankExplosion
+		? new THREE.MeshStandardMaterial({ color: _debrisColor, roughness: 0.5, metalness: 0.8 })
 		: new THREE.MeshStandardMaterial({ color: '#7a6050', roughness: 0.9, metalness: 0 });
 
 	interface Debris {

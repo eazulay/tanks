@@ -2,7 +2,7 @@
 	import * as THREE from 'three';
 	import { T, useTask } from '@threlte/core';
 	import { AudioListener, PositionalAudio } from '@threlte/extras';
-	import { getContext, onMount, onDestroy } from 'svelte';
+	import { getContext, onMount, onDestroy, untrack } from 'svelte';
 	import type { Object3D } from 'three';
 	import Splash from './Splash.svelte';
 	import Flames from './Flames.svelte';
@@ -23,11 +23,17 @@
 		onhealthchange = undefined as ((health: number, destroyed: boolean) => void) | undefined
 	} = $props();
 
+	const _controlled = untrack(() => controlled);
+	const _spawnX = untrack(() => spawnX);
+	const _spawnZ = untrack(() => spawnZ);
+	const _tankColor = untrack(() => tankColor);
+	const _spawnHeading = untrack(() => spawnHeading);
+
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const treeTrunks = getContext<{ x: number; z: number; r: number }[]>('treeTrunks');
 	const tankBodies = getContext<TankBody[]>('tankBodies');
 	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
-	const ENGINE_VOLUME = controlled ? 0.6 : 1.5;
+	const ENGINE_VOLUME = _controlled ? 0.6 : 1.5;
 	const ENGINE_IDLE_TIMEOUT = 1.0; // seconds stationary before engine fades out
 	const ENGINE_SPEED_THRESHOLD = 0.5; // m/s below which the tank counts as stopped
 	let engineIdleTimer = 0;
@@ -39,9 +45,9 @@
 	// hitAt is written by Shell when a shell strikes us, triggering the fire+explosion sequence.
 	const ownBody = {
 		uid: Math.floor(Math.random() * 0xffffffff),
-		x: spawnX,
+		x: _spawnX,
 		y: 0,
-		z: spawnZ,
+		z: _spawnZ,
 		pushVx: 0,
 		pushVz: 0,
 		hitAt: null as number | null,
@@ -281,7 +287,7 @@
 	const _metalMetalness = loadTex('Metal047B', 'Metalness');
 
 	const hullMaterial = new THREE.MeshStandardMaterial({
-		color: tankColor,
+		color: _tankColor,
 		map: _metalColor,
 		normalMap: _metalNormal,
 		roughnessMap: _metalRoughness,
@@ -363,7 +369,7 @@
 	let aiLastSeenX = 0;
 	let aiLastSeenZ = 0;
 	let aiLastSeenTime = 0;
-	let aiPatrolAngle = spawnHeading;
+	let aiPatrolAngle = _spawnHeading;
 	let aiPatrolTimer = 2 + Math.random() * 4;
 	let aiScanDir = Math.random() < 0.5 ? 1 : -1;
 	let aiCooldownTimer = 0;

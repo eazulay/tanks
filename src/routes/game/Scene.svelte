@@ -2,7 +2,7 @@
 	import * as THREE from 'three';
 	import { T, useThrelte } from '@threlte/core';
 	import { useThrelteAudio } from '@threlte/extras';
-	import { setContext, onDestroy } from 'svelte';
+	import { setContext, onDestroy, untrack } from 'svelte';
 	import Tank from '$lib/Tank.svelte';
 	import Shell from '$lib/Shell.svelte';
 	import Explosion from '$lib/Explosion.svelte';
@@ -50,7 +50,7 @@
 
 	// Tank spawning — circle at 80% of terrain half-radius, evenly spaced by count
 	// Index 0 = player, indices 1..opponentCount = opponents (stationary until AI is added)
-	const TANK_COUNT = opponentCount + 1;
+	const TANK_COUNT = untrack(() => opponentCount) + 1;
 	const SPAWN_RADIUS = (WORLD_SIZE / 2) * 0.8; // 300 units
 	const SPAWN_CLEAR = 40; // no trees within this distance of a spawn point
 

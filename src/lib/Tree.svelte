@@ -2,7 +2,7 @@
 	import * as THREE from 'three';
 	import { T, useTask } from '@threlte/core';
 	import { PositionalAudio } from '@threlte/extras';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import Flames from './Flames.svelte';
 
 	let {
@@ -25,13 +25,17 @@
 		burntAt?: number | null;
 	} = $props();
 
+	const _scale = untrack(() => scale);
+	const _numLayers = untrack(() => numLayers);
+	const _colorIndex = untrack(() => colorIndex);
+
 	const FOLIAGE_COLORS = [0x2d5a27, 0x3a7a34, 0x1e4a1a, 0x4a8c40, 0x2d6b2b];
 	const BURN_DURATION = 60_000; // ms until flames die and tree is fully charred
 
-	const trunkH = 3.5 * scale;
-	const trunkR = 0.18 * scale;
-	const baseR = 1.8 * scale;
-	const baseH = 2.5 * scale;
+	const trunkH = 3.5 * _scale;
+	const trunkR = 0.18 * _scale;
+	const baseR = 1.8 * _scale;
+	const baseH = 2.5 * _scale;
 
 	const trunkGeo = new THREE.CylinderGeometry(trunkR * 0.55, trunkR, trunkH, 7);
 	const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5c3d1e, roughness: 0.95 });
@@ -43,7 +47,7 @@
 
 	const layerData: LayerData[] = [];
 	let layerBaseY = trunkH * 0.6;
-	for (let i = 0; i < numLayers; i++) {
+	for (let i = 0; i < _numLayers; i++) {
 		const f = 1 - i * 0.22;
 		const r = baseR * f;
 		const h = baseH * f;
@@ -52,12 +56,12 @@
 	}
 
 	const foliageMat = new THREE.MeshStandardMaterial({
-		color: FOLIAGE_COLORS[colorIndex % FOLIAGE_COLORS.length],
+		color: FOLIAGE_COLORS[_colorIndex % FOLIAGE_COLORS.length],
 		roughness: 0.85
 	});
 
 	// Scratch colors for per-frame lerp — created once to avoid GC pressure
-	const _origFoliage = new THREE.Color(FOLIAGE_COLORS[colorIndex % FOLIAGE_COLORS.length]);
+	const _origFoliage = new THREE.Color(FOLIAGE_COLORS[_colorIndex % FOLIAGE_COLORS.length]);
 	const _origTrunk = new THREE.Color(0x5c3d1e);
 	const _charFoliage = new THREE.Color(0x1c1206);
 	const _charTrunk = new THREE.Color(0x0e0905);
@@ -65,7 +69,7 @@
 	// Flames anchor at the lowest (largest) foliage tier
 	const firePosY = layerData[0].posY;
 	// Super-linear scale boost so big trees burn more dramatically
-	const flameBoost = Math.max(1, scale);
+	const flameBoost = Math.max(1, _scale);
 
 	let isBurning = $state(false);
 	let isBurnt = $state(false);

@@ -2,7 +2,7 @@
 	import * as THREE from 'three';
 	import { T, useTask } from '@threlte/core';
 	import { PositionalAudio } from '@threlte/extras';
-	import { getContext, onDestroy } from 'svelte';
+	import { getContext, onDestroy, untrack } from 'svelte';
 	import Splash from './Splash.svelte';
 	import type { TankBody } from './types';
 
@@ -42,8 +42,8 @@
 	const FIRER_GRACE = 0.3;
 	const HIT_HEIGHT = 3.0; // shell must be within ±3 m of body.y to register a hit
 
-	const pos = position.clone();
-	const vel = velocity.clone();
+	const pos = untrack(() => position).clone();
+	const vel = untrack(() => velocity).clone();
 	let prevY = pos.y;
 	let firerGraceTimer = FIRER_GRACE;
 
@@ -51,7 +51,7 @@
 	// pos is updated in-place each frame, so shellFollow.pos stays in sync automatically.
 	// Scene will overwrite this reference with the impact-point clone when the shell lands,
 	// and null it out when the full sequence (explosion) completes.
-	if (tracked && shellFollow) shellFollow.pos = pos;
+	if (untrack(() => tracked) && shellFollow) shellFollow.pos = pos;
 
 	const shellGeo = new THREE.CylinderGeometry(0.035, 0.055, 0.38, 8);
 	const shellMat = new THREE.MeshStandardMaterial({
