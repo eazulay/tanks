@@ -7,6 +7,7 @@
 	import Splash from './Splash.svelte';
 	import Flames from './Flames.svelte';
 	import type { TankBody, TreeTrunk, ShellFollow } from './types';
+	import { unlockedCtx } from './audioUnlock';
 
 	let {
 		controlled = false,
@@ -348,6 +349,11 @@
 	let braking = false;
 	let mouseDX = 0,
 		mouseDY = 0;
+	let touchDriveX = 0,
+		touchDriveY = 0;
+	let touchAimX = 0,
+		touchAimY = 0;
+	let touchDriveWasActive = false;
 
 	// --- AI constants (non-controlled tanks only) ---
 	const AI_VISION_RANGE = 400;
@@ -431,12 +437,43 @@
 		window.addEventListener('mousemove', onMouseMove);
 		window.addEventListener('tank-fire', onTankFire);
 		window.addEventListener('shell-sequence-done', onShellSequenceDone);
+		const onTouchDrive = (e: Event) => {
+			const d = (e as CustomEvent<{ dx: number; dy: number }>).detail;
+			touchDriveX = d.dx;
+			touchDriveY = d.dy;
+		};
+		const onTouchAim = (e: Event) => {
+			const d = (e as CustomEvent<{ dx: number; dy: number }>).detail;
+			touchAimX = d.dx;
+			touchAimY = d.dy;
+		};
+		const onTouchZoom = () => { zoomed = !zoomed; };
+		const onTouchBrake = () => { braking = true; };
+		// iOS suspends any AudioContext created before a user gesture; sources started
+		// against it silently fail and won't recover on resume().  The fix is to create
+		// a brand-new AudioContext inside the gesture (iOS starts it running) and hand
+		// it to Three.js before the scene remounts — all audio components then
+		// initialise against the live context.
+		const onUnlockAudio = () => {
+			const ctx = unlockedCtx ?? new AudioContext();
+			THREE.AudioContext.setContext(ctx as unknown as THREE.AudioContext);
+		};
+		window.addEventListener('tank-touch-drive', onTouchDrive);
+		window.addEventListener('tank-touch-aim', onTouchAim);
+		window.addEventListener('tank-touch-zoom', onTouchZoom);
+		window.addEventListener('tank-touch-brake', onTouchBrake);
+		window.addEventListener('tank-unlock-audio', onUnlockAudio);
 		return () => {
 			window.removeEventListener('keydown', onKeyDown);
 			window.removeEventListener('keyup', onKeyUp);
 			window.removeEventListener('mousemove', onMouseMove);
 			window.removeEventListener('tank-fire', onTankFire);
 			window.removeEventListener('shell-sequence-done', onShellSequenceDone);
+			window.removeEventListener('tank-touch-drive', onTouchDrive);
+			window.removeEventListener('tank-touch-aim', onTouchAim);
+			window.removeEventListener('tank-touch-zoom', onTouchZoom);
+			window.removeEventListener('tank-touch-brake', onTouchBrake);
+			window.removeEventListener('tank-unlock-audio', onUnlockAudio);
 		};
 	});
 
@@ -1182,6 +1219,27 @@
 			}
 		}
 
+		// Touch drive (mobile left joystick)
+		// Clear keyboard drive flags while joystick is active so they don't interfere;
+		// proportional physics are applied inside the grounded input block below.
+		// On release (both 0): clear any flags left from last active frame.
+		if (controlled) {
+			const touchNow = touchDriveX !== 0 || touchDriveY !== 0;
+			if (touchNow) {
+				upHeld = false;
+				downHeld = false;
+				leftHeld = false;
+				rightHeld = false;
+				touchDriveWasActive = true;
+			} else if (touchDriveWasActive) {
+				upHeld = false;
+				downHeld = false;
+				leftHeld = false;
+				rightHeld = false;
+				touchDriveWasActive = false;
+			}
+		}
+
 		// Input — only when grounded
 		let angVel = 0;
 		if (velocityY === 0) {
@@ -1203,6 +1261,17 @@
 			if (rightHeld) {
 				tankHeading -= TURN_SPEED * delta;
 				angVel = -TURN_SPEED;
+			}
+			// Proportional touch drive — joystick deflection scales speed/turn continuously
+			if (controlled && touchDriveWasActive) {
+				if (Math.abs(touchDriveY) > 0.05) {
+					braking = false;
+					speed += -touchDriveY * ACCEL * delta;
+				}
+				if (Math.abs(touchDriveX) > 0.05) {
+					tankHeading += -touchDriveX * TURN_SPEED * 0.45 * delta;
+					angVel = -touchDriveX * TURN_SPEED * 0.45;
+				}
 			}
 		}
 
@@ -1359,6 +1428,15 @@
 			);
 			mouseDX = 0;
 			mouseDY = 0;
+		}
+
+		// Touch aim (mobile right joystick) — rate proportional to deflection
+		if (controlled && (touchAimX !== 0 || touchAimY !== 0)) {
+			turretHeading -= touchAimX * TURRET_SPEED * 0.9 * aimFactor * delta;
+			barrelElevation = Math.max(
+				BARREL_MIN,
+				Math.min(BARREL_MAX, barrelElevation - touchAimY * BARREL_SPEED * 2 * aimFactor * delta)
+			);
 		}
 
 		// Camera — follows behind the barrel direction (turret heading relative to hull)

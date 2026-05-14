@@ -2,6 +2,8 @@
 	import { Canvas } from '@threlte/core';
 	import Scene from './Scene.svelte';
 	import { page } from '$app/state';
+	import { onMount } from 'svelte';
+	import Joystick from '$lib/Joystick.svelte';
 	import type { TankHealthEntry } from '$lib/types';
 
 	const opponentCount = Math.min(
@@ -29,6 +31,49 @@
 	let reloadProgress = $state(1);
 	let reloadStart = $state<number | null>(null);
 	let muted = $state(startMuted);
+	let isTouch = $state(false);
+	let touchActive = $state(false);
+	let touchFireHeld = false;
+
+	onMount(() => {
+		isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+		if (isTouch) {
+			window.dispatchEvent(new CustomEvent('tank-unlock-audio'));
+			touchActive = true;
+		}
+	});
+
+	function dispatchDrive(dx: number, dy: number) {
+		window.dispatchEvent(new CustomEvent('tank-touch-drive', { detail: { dx, dy } }));
+	}
+
+	function dispatchBrake() {
+		window.dispatchEvent(new CustomEvent('tank-touch-brake'));
+	}
+
+	function dispatchAim(dx: number, dy: number) {
+		window.dispatchEvent(new CustomEvent('tank-touch-aim', { detail: { dx, dy } }));
+	}
+
+	function toggleZoom() {
+		window.dispatchEvent(new CustomEvent('tank-touch-zoom'));
+	}
+
+	function onFireTouchStart(e: TouchEvent) {
+		e.preventDefault();
+		if (!touchFireHeld) {
+			touchFireHeld = true;
+			startCharge();
+		}
+	}
+
+	function onFireTouchEnd(e: TouchEvent) {
+		e.preventDefault();
+		if (touchFireHeld) {
+			touchFireHeld = false;
+			tryFire();
+		}
+	}
 
 	function toggleMute() {
 		muted = !muted;
@@ -110,7 +155,7 @@
 				reloadProgress = Math.min(1, (now - reloadStart) / RELOAD_TIME);
 				if (reloadProgress >= 1) {
 					reloadStart = null;
-					if (spaceHeld || mouseHeld) startCharge();
+					if (spaceHeld || mouseHeld || touchFireHeld) startCharge();
 				}
 			}
 			rafId = requestAnimationFrame(tick);
@@ -230,6 +275,32 @@
 		</div>
 	{/if}
 
+	{#if isTouch && touchActive && !gameOver}
+		<div class="touch-controls">
+			<div class="left-group">
+				<div class="stick-wrap">
+					<Joystick onchange={dispatchDrive} label="DRIVE" taplabel="BRAKE" ontap={dispatchBrake} />
+				</div>
+				<div class="action-btns">
+					<button class="zoom-btn" onclick={toggleZoom}>Zoom</button>
+					<button
+						class="fire-btn"
+						ontouchstart={onFireTouchStart}
+						ontouchend={onFireTouchEnd}
+						ontouchcancel={onFireTouchEnd}
+					>FIRE</button>
+				</div>
+			</div>
+			<div class="stick-wrap">
+				<Joystick onchange={dispatchAim} label="AIM" />
+			</div>
+		</div>
+		<div class="touch-hud">
+			<button class="touch-btn" onclick={toggleMute}>{muted ? 'Unmute' : 'Mute'}</button>
+			<a href="/" class="touch-btn">Quit</a>
+		</div>
+	{/if}
+
 	{#if gameOver}
 		<div class="overlay">
 			<div class="panel">
@@ -239,6 +310,8 @@
 				</div>
 			</div>
 		</div>
+	{:else if isTouch && touchActive}
+		<!-- touch controls rendered above -->
 	{:else if locked}
 		<div class="overlay">
 			<p class="hint">
@@ -279,6 +352,112 @@
 		position: relative;
 		width: 100%;
 		height: 100svh;
+		touch-action: none;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
+	}
+
+	.touch-controls {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		display: flex;
+		align-items: flex-end;
+		justify-content: space-between;
+		padding: 1rem 1.5rem 1.5rem;
+		pointer-events: none;
+		z-index: 15;
+	}
+
+	.left-group {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 0.75rem;
+		pointer-events: none;
+	}
+
+	@media (orientation: portrait) {
+		.left-group {
+			flex-direction: column-reverse;
+			align-items: center;
+		}
+	}
+
+	.stick-wrap {
+		pointer-events: auto;
+	}
+
+	.fire-btn {
+		width: 80px;
+		height: 80px;
+		padding: 0;
+		border-radius: 50%;
+		background: rgba(160, 30, 30, 0.7);
+		border: 2px solid rgba(255, 100, 100, 0.6);
+		color: #fff;
+		font-size: 0.8rem;
+		font-weight: 700;
+		letter-spacing: 0.1em;
+		touch-action: none;
+		pointer-events: auto;
+		user-select: none;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.action-btns {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		align-items: center;
+		pointer-events: none;
+	}
+
+	.zoom-btn {
+		width: 60px;
+		height: 60px;
+		padding: 0;
+		border-radius: 50%;
+		background: rgba(30, 80, 160, 0.7);
+		border: 2px solid rgba(100, 160, 255, 0.6);
+		color: #fff;
+		font-size: 0.7rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		touch-action: none;
+		pointer-events: auto;
+		user-select: none;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.touch-hud {
+		position: absolute;
+		top: 0.75rem;
+		right: 0.75rem;
+		z-index: 15;
+		display: flex;
+		gap: 0.4rem;
+	}
+
+	.touch-btn {
+		padding: 0.3rem 0.7rem;
+		font-size: 0.7rem;
+		background: rgba(0, 0, 0, 0.55);
+		border: 1px solid #555;
+		border-radius: 4px;
+		color: #ccc;
+		cursor: pointer;
+		text-decoration: none;
+		display: inline-flex;
+		align-items: center;
 	}
 
 	.gameover-text {

@@ -1,6 +1,15 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { unlockAudio } from '$lib/audioUnlock';
+
 	let opponents = $state(1);
 	let muted = $state(false);
+
+	function startGame(e: MouseEvent) {
+		e.preventDefault();
+		unlockAudio();
+		goto(`/game?opponents=${opponents}${muted ? '&muted=1' : ''}`);
+	}
 </script>
 
 <main>
@@ -30,7 +39,7 @@
 			</label>
 		</div>
 
-		<a href="/game?opponents={opponents}{muted ? '&muted=1' : ''}" class="start-btn">Start Game</a>
+		<a href="/game?opponents={opponents}{muted ? '&muted=1' : ''}" class="start-btn" onclick={startGame}>Start Game</a>
 	</div>
 </main>
 
