@@ -91,6 +91,7 @@
 			if (p.body.hitAt === null) {
 				p.body.lastHit = { dist: p.minDist, wx: p.minWx, wz: p.minWz };
 				pendingHits.splice(i, 1);
+				onimpact?.(pos.clone());
 				done = true;
 				if (groupRef) groupRef.visible = false;
 				return true;
@@ -181,6 +182,7 @@
 					// Moving away or exited — closest point reached, register hit
 					p.body.lastHit = { dist: p.minDist, wx: p.minWx, wz: p.minWz };
 					pendingHits.splice(i, 1);
+					onimpact?.(new THREE.Vector3(p.minWx, pos.y, p.minWz));
 					done = true;
 					if (groupRef) groupRef.visible = false;
 					return;
@@ -256,8 +258,8 @@
 		autoplay
 		bind:this={whistleRef}
 		refDistance={80}
-		maxDistance={600}
-		volume={1}
+		maxDistance={200}
+		volume={0.6}
 	/>
 </T.Group>
 
