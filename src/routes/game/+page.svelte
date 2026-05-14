@@ -2,6 +2,7 @@
 	import { Canvas } from '@threlte/core';
 	import Scene from './Scene.svelte';
 	import { page } from '$app/state';
+	import type { TankHealthEntry } from '$lib/types';
 
 	const opponentCount = Math.min(
 		3,
@@ -9,11 +10,6 @@
 	);
 	const startMuted = page.url.searchParams.get('muted') === '1';
 
-	interface TankHealthEntry {
-		health: number;
-		destroyed: boolean;
-		color: string;
-	}
 	let tankHealthData = $state<TankHealthEntry[]>([]);
 
 	const RELOAD_TIME = 2000;

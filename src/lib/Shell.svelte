@@ -4,7 +4,7 @@
 	import { PositionalAudio } from '@threlte/extras';
 	import { getContext, onDestroy, untrack } from 'svelte';
 	import Splash from './Splash.svelte';
-	import type { TankBody } from './types';
+	import type { TankBody, SplashEntry, ShellFollow, TreeVol } from './types';
 
 	let {
 		position,
@@ -24,9 +24,8 @@
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
-	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
+	const shellFollow = getContext<ShellFollow>('shellFollow');
 	const tankBodies = getContext<TankBody[]>('tankBodies');
-	type TreeVol = { x: number; z: number; y: number; top: number; canopyR: number };
 	const forNearbyTreeVolumes =
 		getContext<(x: number, z: number, fn: (vol: TreeVol) => boolean) => void>(
 			'forNearbyTreeVolumes'
@@ -73,12 +72,6 @@
 
 	let groupRef: THREE.Group | null = null;
 	let done = false;
-
-	interface SplashEntry {
-		id: number;
-		x: number;
-		z: number;
-	}
 
 	// Closest-approach tracker: one entry per tank whose hit cylinder the shell is currently inside.
 	// The hit is not declared until the shell starts moving away (dist > minDist) or exits the cylinder,

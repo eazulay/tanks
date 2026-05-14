@@ -4,6 +4,7 @@
 	import { PositionalAudio } from '@threlte/extras';
 	import { getContext, onDestroy, untrack } from 'svelte';
 	import Splash from './Splash.svelte';
+	import type { SplashEntry } from './types';
 
 	let {
 		position,
@@ -126,11 +127,6 @@
 
 	let elapsed = 0;
 
-	interface SplashEntry {
-		id: number;
-		x: number;
-		z: number;
-	}
 	let splashes = $state<SplashEntry[]>([]);
 	let nextSplashId = 0;
 

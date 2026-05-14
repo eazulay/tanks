@@ -6,7 +6,7 @@
 	import type { Object3D } from 'three';
 	import Splash from './Splash.svelte';
 	import Flames from './Flames.svelte';
-	import type { TankBody } from './types';
+	import type { TankBody, TreeTrunk, ShellFollow } from './types';
 
 	let {
 		controlled = false,
@@ -30,9 +30,9 @@
 	const _spawnHeading = untrack(() => spawnHeading);
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
-	const treeTrunks = getContext<{ x: number; z: number; r: number }[]>('treeTrunks');
+	const treeTrunks = getContext<TreeTrunk[]>('treeTrunks');
 	const tankBodies = getContext<TankBody[]>('tankBodies');
-	const shellFollow = getContext<{ pos: THREE.Vector3 | null }>('shellFollow');
+	const shellFollow = getContext<ShellFollow>('shellFollow');
 	const ENGINE_VOLUME = _controlled ? 0.6 : 1.5;
 	const ENGINE_IDLE_TIMEOUT = 1.0; // seconds stationary before engine fades out
 	const ENGINE_SPEED_THRESHOLD = 0.5; // m/s below which the tank counts as stopped

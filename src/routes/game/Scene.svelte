@@ -7,13 +7,7 @@
 	import Shell from '$lib/Shell.svelte';
 	import Explosion from '$lib/Explosion.svelte';
 	import Tree from '$lib/Tree.svelte';
-	import type { TankBody } from '$lib/types';
-
-	interface TankHealthEntry {
-		health: number;
-		destroyed: boolean;
-		color: string;
-	}
+	import type { TankBody, TankHealthEntry, TreeVol, TreeTrunk, ShellFollow } from '$lib/types';
 
 	let {
 		opponentCount = 1,
@@ -251,12 +245,11 @@
 	setContext('isInBounds', isInBounds);
 
 	// Stable array of trunk colliders, updated in initGame(); Tank reads this every frame.
-	const treeTrunks: { x: number; z: number; r: number }[] = [];
+	const treeTrunks: TreeTrunk[] = [];
 	setContext('treeTrunks', treeTrunks);
 
 	// Stable array of tree bounding cylinders for shell hit detection.
 	// canopyR = widest foliage tier radius; top = world Y of tree apex.
-	type TreeVol = { x: number; z: number; y: number; top: number; canopyR: number };
 	const treeVolumes: TreeVol[] = [];
 
 	// Spatial grid for tree volumes — shell queries only the 3×3 cells around its XZ position
@@ -305,7 +298,7 @@
 
 	// Shell position tracker — Shell writes its live position here; Tank camera reads it when zoomed.
 	// Scene nulls it out and dispatches 'shell-sequence-done' when the full sequence ends.
-	const shellFollow: { pos: THREE.Vector3 | null } = { pos: null };
+	const shellFollow: ShellFollow = { pos: null };
 	setContext('shellFollow', shellFollow);
 	let trackedExplosionId: number | null = null;
 
