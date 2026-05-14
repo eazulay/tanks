@@ -388,6 +388,7 @@
 	let aiMissCount = 0; // consecutive misses — triggers repositioning when high
 	let aiStuckTimer = 0; // seconds the AI has been trying to move with speed near 0
 	let aiStuckTurnDir = 1; // +1 = detour left, -1 = detour right
+	let aiBlindShotFired = false; // true after firing once at last-known pos without LOS
 
 	$effect(() => {
 		if (!controlled) return;
@@ -827,6 +828,7 @@
 						aiAimBiasSpeed = 0;
 						aiAimBiasTurret = 0;
 						aiMissCount = 0;
+						aiBlindShotFired = false;
 					}
 				}
 
@@ -870,6 +872,7 @@
 							aiLastSeenX = engageBody.x;
 							aiLastSeenZ = engageBody.z;
 							aiLastSeenTime = Date.now();
+							aiBlindShotFired = false;
 						}
 					}
 				}
@@ -1065,16 +1068,30 @@
 								Math.abs(aiTargetElev - barrelElevation) < AI_AIM_TOL;
 							// Close range: fire while moving (no speed or slope gate).
 							// Good range: require stopped on flat ground.
+							// Blind shot: one shot at last-known position even without LOS,
+							// before transitioning to search.
+							const blindShotOk =
+								!hasLos &&
+								!aiBlindShotFired &&
+								!tooClose &&
+								aimed &&
+								Math.abs(speed) < AI_STOP_SPEED &&
+								!onSlope;
 							const fireOk = tooClose
 								? aimed && hasLos
-								: aimed && Math.abs(speed) < AI_STOP_SPEED && hasLos && !onSlope;
+								: aimed && Math.abs(speed) < AI_STOP_SPEED && (hasLos || blindShotOk) && !onSlope;
 							if (fireOk) {
 								aiStopTimer += delta;
 								if (aiStopTimer > 0.3) {
 									ownBody.lastShellImpact = null; // clear before new shell can write
 									aiFire();
-									aiState = 'cooldown';
-									aiCooldownTimer = 2 + Math.random() * 1.5;
+									if (blindShotOk) {
+										aiBlindShotFired = true;
+										aiState = 'search';
+									} else {
+										aiState = 'cooldown';
+										aiCooldownTimer = 2 + Math.random() * 1.5;
+									}
 									aiStopTimer = 0;
 								}
 							} else {
