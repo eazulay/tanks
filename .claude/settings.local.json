@@ -11,7 +11,10 @@
       "WebSearch",
       "WebFetch(domain:threlte.vercel.app)",
       "Bash(npm list *)",
-      "Bash(npm show *)"
+      "Bash(npm show *)",
+      "Bash(Select-String -Path \"C:\\\\node\\\\tanks\\\\src\\\\lib\\\\Tank.svelte\" -Pattern \"AudioListener|PositionalAudio|chaseCamera|tankDestroyed|{#if|{/if\")",
+      "Bash(Select-Object LineNumber, Line)",
+      "Bash(Format-Table -Wrap)"
     ]
   }
 }

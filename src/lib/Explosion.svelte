@@ -40,6 +40,7 @@
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
+	const audioId = getContext<string>('audioId') ?? 'default';
 
 	const FIREBALL_DURATION = 0.6;
 	const FIREBALL_MAX_RADIUS = _tankExplosion ? 3.5 : 2.5;
@@ -246,6 +247,7 @@
 	position={[position.x, position.y, position.z]}
 >
 	<PositionalAudio
+		id={audioId}
 		src="/audio/explosion.mp3"
 		autoplay
 		volume={tankExplosion ? 1.5 : 1.0}

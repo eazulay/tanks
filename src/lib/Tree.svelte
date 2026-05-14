@@ -2,7 +2,7 @@
 	import * as THREE from 'three';
 	import { T, useTask } from '@threlte/core';
 	import { PositionalAudio } from '@threlte/extras';
-	import { onDestroy, untrack } from 'svelte';
+	import { getContext, onDestroy, untrack } from 'svelte';
 	import Flames from './Flames.svelte';
 
 	let {
@@ -24,6 +24,8 @@
 		colorIndex?: number;
 		burntAt?: number | null;
 	} = $props();
+
+	const audioId = getContext<string>('audioId') ?? 'default';
 
 	const _scale = untrack(() => scale);
 	const _numLayers = untrack(() => numLayers);
@@ -110,6 +112,7 @@
 	{/each}
 	{#if burntAt !== null && !isBurnt}
 		<PositionalAudio
+			id={audioId}
 			src="/audio/tree-on-fire.mp3"
 			loop
 			autoplay

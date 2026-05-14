@@ -26,6 +26,7 @@
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
 	const shellFollow = getContext<ShellFollow>('shellFollow');
 	const tankBodies = getContext<TankBody[]>('tankBodies');
+	const audioId = getContext<string>('audioId') ?? 'default';
 	const forNearbyTreeVolumes =
 		getContext<(x: number, z: number, fn: (vol: TreeVol) => boolean) => void>(
 			'forNearbyTreeVolumes'
@@ -249,6 +250,7 @@
 >
 	<T.Mesh castShadow geometry={shellGeo} material={shellMat} />
 	<PositionalAudio
+		id={audioId}
 		src="/audio/shell-fly.mp3"
 		loop
 		autoplay

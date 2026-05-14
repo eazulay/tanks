@@ -33,6 +33,7 @@
 	const treeTrunks = getContext<TreeTrunk[]>('treeTrunks');
 	const tankBodies = getContext<TankBody[]>('tankBodies');
 	const shellFollow = getContext<ShellFollow>('shellFollow');
+	const audioId = getContext<string>('audioId') ?? 'default';
 	const ENGINE_VOLUME = _controlled ? 0.6 : 1.5;
 	const ENGINE_IDLE_TIMEOUT = 1.0; // seconds stationary before engine fades out
 	const ENGINE_SPEED_THRESHOLD = 0.5; // m/s below which the tank counts as stopped
@@ -1432,7 +1433,7 @@
 		position={[cameraPosition.x, cameraPosition.y, cameraPosition.z]}
 		oncreate={handleCameraCreate}
 	>
-		<AudioListener />
+		<AudioListener id={audioId} />
 	</T.PerspectiveCamera>
 	<T.DirectionalLight castShadow intensity={3} oncreate={handleLightCreate} />
 {/if}
@@ -1446,6 +1447,7 @@
 >
 	{#if !tankDestroyed}
 		<PositionalAudio
+			id={audioId}
 			src="/audio/diesel-engine.mp3"
 			loop
 			autoplay
@@ -1453,7 +1455,13 @@
 			refDistance={30}
 			playbackRate={enginePlaybackRate}
 		/>
-		<PositionalAudio src="/audio/shot.mp3" bind:this={shotRef} refDistance={40} maxDistance={600} />
+		<PositionalAudio
+			id={audioId}
+			src="/audio/shot.mp3"
+			bind:this={shotRef}
+			refDistance={40}
+			maxDistance={600}
+		/>
 	{/if}
 
 	<T.Group rotation.x={tankPitch} rotation.z={tankRoll}>

@@ -23,11 +23,16 @@
 		muted?: boolean;
 	} = $props();
 
+	// Unique audio listener ID per Scene instance — prevents Threlte's addAudioListener guard from
+	// blocking the new listener when {#key} mounts new Scene before tearing down the old one.
+	const audioId = Math.random().toString(36).slice(2);
+	setContext('audioId', audioId);
+
 	// getAudioListener must be obtained at init time (uses Svelte context internally)
 	const { getAudioListener } = useThrelteAudio();
 	$effect(() => {
 		// muted prop changed; listener is available once the player Tank has mounted
-		getAudioListener()?.setMasterVolume(muted ? 0 : 1);
+		getAudioListener(audioId)?.setMasterVolume(muted ? 0 : 1);
 	});
 
 	const { scene } = useThrelte();
