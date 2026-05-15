@@ -8,6 +8,7 @@
 	import Explosion from '$lib/Explosion.svelte';
 	import Tree from '$lib/Tree.svelte';
 	import type { TankBody, TankHealthEntry, TreeVol, TreeTrunk, ShellFollow } from '$lib/types';
+	import { mulberry32 } from '$lib/rand';
 
 	let {
 		opponentCount = 1,
@@ -26,6 +27,11 @@
 	// Unique audio listener ID per Scene instance — prevents Threlte's addAudioListener guard from
 	// blocking the new listener when {#key} mounts new Scene before tearing down the old one.
 	const audioId = Math.random().toString(36).slice(2);
+
+	// Seeded RNG — one seed per Scene mount, shared across terrain + spawn + tree generation
+	// so the same seed always produces the same world. Exposed on window for debugging.
+	const gameSeed = (Math.random() * 2 ** 32) | 0;
+	const rand = mulberry32(gameSeed);
 	setContext('audioId', audioId);
 
 	// getAudioListener must be obtained at init time (uses Svelte context internally)
@@ -61,36 +67,36 @@
 		const h = new Float32Array(N * N);
 
 		// Seed top-left corner at a random base elevation in [-10, 40]
-		h[0] = Math.random() * 45 - 10;
+		h[0] = rand() * 45 - 10;
 
 		// Walk the top row — used as upper constraint for the first interior row
 		for (let c = 1; c < N - 1; c++) {
 			const prev = h[c - 1];
 			const lo = Math.max(-10, prev - MAX_STEP_HEIGHT);
 			const hi = Math.min(35, prev + MAX_STEP_HEIGHT);
-			h[c] = lo + Math.random() * (hi - lo);
+			h[c] = lo + rand() * (hi - lo);
 		}
 
 		// Walk the left column — used as left constraint for each row
-		for (let r = 1; r < N - 1; r++) {
-			const prev = h[(r - 1) * N];
+		for (let row = 1; row < N - 1; row++) {
+			const prev = h[(row - 1) * N];
 			const lo = Math.max(-10, prev - MAX_STEP_HEIGHT);
 			const hi = Math.min(35, prev + MAX_STEP_HEIGHT);
-			h[r * N] = lo + Math.random() * (hi - lo);
+			h[row * N] = lo + rand() * (hi - lo);
 		}
 
 		// Generate interior vertices — every vertex constrained by both left and upper neighbour
-		for (let r = 1; r < N - 1; r++) {
+		for (let row = 1; row < N - 1; row++) {
 			for (let c = 1; c < N - 1; c++) {
 				let lo = -10,
 					hi = 35;
-				const left = h[r * N + c - 1];
+				const left = h[row * N + c - 1];
 				lo = Math.max(lo, left - MAX_STEP_HEIGHT);
 				hi = Math.min(hi, left + MAX_STEP_HEIGHT);
-				const above = h[(r - 1) * N + c];
+				const above = h[(row - 1) * N + c];
 				lo = Math.max(lo, above - MAX_STEP_HEIGHT);
 				hi = Math.min(hi, above + MAX_STEP_HEIGHT);
-				h[r * N + c] = lo > hi ? (lo + hi) / 2 : lo + Math.random() * (hi - lo);
+				h[row * N + c] = lo > hi ? (lo + hi) / 2 : lo + rand() * (hi - lo);
 			}
 		}
 		// Set border vertices above their adjacent interior neighbour
@@ -490,13 +496,13 @@
 		// Compute spawn positions first so tree generation can avoid them.
 		// Tanks sit on a circle at SPAWN_RADIUS, evenly spaced, with a random base
 		// rotation each game for variety. Each position has up to 10% radial jitter.
-		const baseAngle = Math.random() * Math.PI * 2;
+		const baseAngle = rand() * Math.PI * 2;
 		const jitter = SPAWN_RADIUS * 0.1;
 		const newSpawns = Array.from({ length: TANK_COUNT }, (_, i) => {
 			const angle = baseAngle + ((2 * Math.PI) / TANK_COUNT) * i;
 			return {
-				x: Math.cos(angle) * SPAWN_RADIUS + (Math.random() - 0.5) * 2 * jitter,
-				z: Math.sin(angle) * SPAWN_RADIUS + (Math.random() - 0.5) * 2 * jitter,
+				x: Math.cos(angle) * SPAWN_RADIUS + (rand() - 0.5) * 2 * jitter,
+				z: Math.sin(angle) * SPAWN_RADIUS + (rand() - 0.5) * 2 * jitter,
 				heading: -angle // CW tangent: 90° from outward radial, away from nearest edge
 			};
 		});
@@ -555,8 +561,8 @@
 				wz < WORLD_SIZE / 2 - TREE_SPACING;
 				wz += TREE_SPACING
 			) {
-				const jx = wx + (Math.random() - 0.5) * TREE_SPACING * 0.8;
-				const jz = wz + (Math.random() - 0.5) * TREE_SPACING * 0.8;
+				const jx = wx + (rand() - 0.5) * TREE_SPACING * 0.8;
+				const jz = wz + (rand() - 0.5) * TREE_SPACING * 0.8;
 				const h = getTerrainHeight(jx, jz);
 				if (h < 5 || h > 23) continue;
 				const eps = 3;
@@ -569,10 +575,10 @@
 					x: jx,
 					y: h,
 					z: jz,
-					scale: 0.6 + Math.random() * 0.9,
-					rotation: Math.random() * Math.PI * 2,
-					numLayers: 2 + Math.floor(Math.random() * 3),
-					colorIndex: Math.floor(Math.random() * 5),
+					scale: 0.6 + rand() * 0.9,
+					rotation: rand() * Math.PI * 2,
+					numLayers: 2 + Math.floor(rand() * 3),
+					colorIndex: Math.floor(rand() * 5),
 					burntAt: null
 				});
 			}
