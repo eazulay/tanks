@@ -30,7 +30,7 @@ No test runner is configured — type checking via `svelte-check` and linting vi
 The game is named **Tank Royale**. It is a SvelteKit + Three.js tanks game using [Threlte](https://threlte.xyz/) (Three.js bindings for Svelte 5).
 
 **Route flow:**
-- `src/routes/+page.svelte` — Mode-select landing page: "Single Player" → `/single`, "Multiplayer" → `/multi`
+- `src/routes/+page.svelte` — Mode-select landing page: player name input (persisted to `localStorage`), "Single Player" → `/single`, "Multiplayer" → `/multi` (disabled until a name is entered)
 - `src/routes/single/+page.svelte` — Single-player setup: AI opponent count 1–5 (radio chips), Mute checkbox, Start Game; calls `unlockAudio()` in `startGame()`; navigates to `/game?opponents=N&muted=1`
 - `src/routes/multi/+page.svelte` — Multiplayer placeholder ("Coming soon")
 - `src/routes/game/+page.svelte` — Parses `opponents` (capped at 5) and `muted` query params via `$app/state` `page`; wraps `<Scene opponentCount>` in Threlte's `<Canvas shadows>`, holds `restartKey` and pointer-lock state, manages the firing charge mechanic, renders HTML overlay

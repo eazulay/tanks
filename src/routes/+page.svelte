@@ -1,3 +1,22 @@
+<script>
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+
+	let playerName = $state('');
+	let _ready = false;
+
+	onMount(() => {
+		playerName = localStorage.getItem('playerName') ?? '';
+		_ready = true;
+	});
+
+	$effect(() => {
+		if (_ready) localStorage.setItem('playerName', playerName);
+	});
+
+	const canMulti = $derived(playerName.trim().length > 0);
+</script>
+
 <main>
 	<div class="content">
 		<h1>Tank Royale</h1>
@@ -5,9 +24,23 @@
 			Command your tank across randomly generated terrain. Outmaneuver the enemy, master the slopes,
 			and be the last one standing.
 		</p>
+		<div class="name-row">
+			<label for="name-input">Your Name</label>
+			<input
+				id="name-input"
+				type="text"
+				bind:value={playerName}
+				placeholder="Required for multiplayer"
+				maxlength="20"
+				autocomplete="off"
+				spellcheck="false"
+			/>
+		</div>
 		<div class="mode-buttons">
 			<a href="/single" class="mode-btn">Single Player</a>
-			<a href="/multi" class="mode-btn">Multiplayer</a>
+			<button class="mode-btn" disabled={!canMulti} onclick={() => goto('/multi')}>
+				Multiplayer
+			</button>
 		</div>
 	</div>
 </main>
@@ -48,7 +81,44 @@
 		font-weight: 400;
 		color: #a8b89a;
 		line-height: 1.65;
-		margin: 0 0 2.8rem;
+		margin: 0 0 2rem;
+	}
+
+	.name-row {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.45rem;
+		margin-bottom: 2.2rem;
+	}
+
+	.name-row label {
+		font-family: 'Bebas Neue', sans-serif;
+		font-size: 1rem;
+		letter-spacing: 0.1em;
+		color: #a8b89a;
+	}
+
+	.name-row input {
+		font-family: 'Inter', sans-serif;
+		font-size: 1rem;
+		color: #e8e0c8;
+		background: rgba(255, 255, 255, 0.06);
+		border: 1px solid rgba(212, 168, 50, 0.4);
+		border-radius: 4px;
+		padding: 0.5em 1em;
+		width: 220px;
+		text-align: center;
+		outline: none;
+		transition: border-color 0.15s;
+	}
+
+	.name-row input::placeholder {
+		color: rgba(168, 184, 154, 0.45);
+	}
+
+	.name-row input:focus {
+		border-color: #d4a832;
 	}
 
 	.mode-buttons {
@@ -68,6 +138,8 @@
 		padding: 0.7em 2.6em;
 		border-radius: 4px;
 		text-decoration: none;
+		border: none;
+		cursor: pointer;
 		transition:
 			background 0.15s,
 			transform 0.1s,
@@ -84,5 +156,19 @@
 	.mode-btn:active {
 		transform: translateY(0);
 		box-shadow: 0 2px 8px rgba(212, 168, 50, 0.3);
+	}
+
+	button.mode-btn:disabled {
+		background: #3a3a2a;
+		color: #5a5a4a;
+		box-shadow: none;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	button.mode-btn:disabled:hover {
+		background: #3a3a2a;
+		transform: none;
+		box-shadow: none;
 	}
 </style>
