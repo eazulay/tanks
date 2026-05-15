@@ -22,6 +22,7 @@ export interface TankHealthEntry {
 	health: number;
 	destroyed: boolean;
 	color: string;
+	name: string;
 }
 
 export interface TreeVol {
@@ -121,8 +122,14 @@ type RequestJoinMsg = { type: 'request_join'; roomId: string };
 /** Any room member accepts a pending join request. */
 type AcceptJoinMsg = { type: 'accept_join'; clientId: string };
 
+/** Requester withdraws their own pending join request. */
+type CancelJoinMsg = { type: 'cancel_join' };
+
 /** Player voluntarily leaves their current room (treated the same as disconnect). */
 type LeaveRoomMsg = { type: 'leave_room' };
+
+/** Room creator locks or unlocks the room. Locked rooms reject new join requests. */
+type LockRoomMsg = { type: 'lock_room'; locked: boolean };
 
 /** Any room member changes the AI opponent count (0–4, locked after countdown starts). */
 type SetAiCountMsg = { type: 'set_ai_count'; count: number };
@@ -193,13 +200,18 @@ type TreeIgnitedMsg = { type: 'tree_ignited'; treeId: number };
 /** Host detected game over. */
 type GameOverMsg = { type: 'game_over' };
 
+/** Broadcast to remaining in-game players when a non-host player disconnects mid-game. */
+type PlayerLeftMsg = { type: 'player_left'; clientId: string; name: string };
+
 export type ClientMessage =
 	| BenchmarkMsg
 	| SetNameMsg
 	| CreateRoomMsg
 	| RequestJoinMsg
 	| AcceptJoinMsg
+	| CancelJoinMsg
 	| LeaveRoomMsg
+	| LockRoomMsg
 	| SetAiCountMsg
 	| SetColorMsg
 	| ClickStartMsg
@@ -232,6 +244,9 @@ type JoinAcceptedMsg = { type: 'join_accepted'; room: RoomState };
 /** Sent to the requester when their join request cannot be fulfilled. */
 type JoinRejectedMsg = { type: 'join_rejected'; reason: 'locked' | 'full' | 'not_found' };
 
+/** Broadcast to room members when a pending join request is withdrawn or the requester disconnects. */
+type JoinCancelledMsg = { type: 'join_cancelled'; clientId: string };
+
 /** Sent to all room members when the countdown is aborted before reaching zero. */
 type CountdownCancelledMsg = {
 	type: 'countdown_cancelled';
@@ -252,7 +267,7 @@ type GameStartMsg = {
 	seed: number;
 	hostClientId: string;
 	aiCount: number;
-	assignments: { clientId: string; tankIndex: number; colorIndex: number }[];
+	assignments: { clientId: string; tankIndex: number; colorIndex: number; name: string }[];
 };
 
 /** Relay reporting a protocol or validation error to the sender. */
@@ -271,6 +286,7 @@ export type ServerMessage =
 	| JoinRequestedMsg
 	| JoinAcceptedMsg
 	| JoinRejectedMsg
+	| JoinCancelledMsg
 	| CountdownCancelledMsg
 	| KickedMsg
 	| GameStartMsg
@@ -281,7 +297,8 @@ export type ServerMessage =
 	| ShellRemovedMsg
 	| ExplosionMsg
 	| TreeIgnitedMsg
-	| GameOverMsg;
+	| GameOverMsg
+	| PlayerLeftMsg;
 
 // --- Helpers ---
 

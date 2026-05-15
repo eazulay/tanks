@@ -2,17 +2,87 @@
 	import { Canvas } from '@threlte/core';
 	import Scene from './Scene.svelte';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { browser } from '$app/environment';
+	import { onMount, onDestroy } from 'svelte';
 	import Joystick from '$lib/Joystick.svelte';
 	import type { TankHealthEntry } from '$lib/types';
+	import { mp, send, TANK_COLORS, type GameStart } from '$lib/mp.svelte.js';
 
 	const opponentCount = Math.min(
 		5,
-		Math.max(1, parseInt(page.url.searchParams.get('opponents') ?? '1', 10))
+		Math.max(0, parseInt(page.url.searchParams.get('opponents') ?? '1', 10))
 	);
 	const startMuted = page.url.searchParams.get('muted') === '1';
+	const tankCount = opponentCount + 1;
 
 	let tankHealthData = $state<TankHealthEntry[]>([]);
+
+	// Compute names/colors/seed at module-init time so Scene.initGame() reads them on first mount.
+	// onMount fires AFTER child components initialise, so any value set there arrives too late.
+	// browser check guards localStorage/sessionStorage access during SSR.
+	function buildGameSetup() {
+		const empty = {
+			gameSeed: null as number | null,
+			tankNames: [] as string[],
+			tankColors: [] as string[],
+			// relay tankIndex → local health-bar index (only populated for multiplayer)
+			relayToLocal: null as Map<number, number> | null
+		};
+		if (!browser) return empty;
+
+		const localName = localStorage.getItem('playerName') ?? 'Player';
+
+		// Prefer live mp state; fall back to sessionStorage (survives a full-page reload)
+		const gs: GameStart | null =
+			mp.gameStart ??
+			((): GameStart | null => {
+				try {
+					const raw = sessionStorage.getItem('mp_gameStart');
+					return raw ? (JSON.parse(raw) as GameStart) : null;
+				} catch {
+					return null;
+				}
+			})();
+		const selfClientId = mp.clientId ?? sessionStorage.getItem('mp_clientId') ?? null;
+
+		if (gs) {
+			// Multiplayer — reorder so local index 0 = self, 1..n = opponents in relay-tankIndex order.
+			const asgn = gs.assignments;
+			const selfAsgn = asgn.find((a) => a.clientId === selfClientId);
+			const names: string[] = [localName];
+			const colors: string[] = [TANK_COLORS[selfAsgn?.colorIndex ?? 0] ?? '#CBFF70'];
+			const relayToLocal = new Map<number, number>();
+			if (selfAsgn) relayToLocal.set(selfAsgn.tankIndex, 0);
+			let aiNum = 1;
+			for (let relayIdx = 0; relayIdx < tankCount; relayIdx++) {
+				if (selfAsgn && relayIdx === selfAsgn.tankIndex) continue;
+				const localIdx = names.length;
+				const a = asgn.find((a) => a.tankIndex === relayIdx);
+				if (a) {
+					names.push(a.name);
+					colors.push(TANK_COLORS[a.colorIndex] ?? '#CBFF70');
+					relayToLocal.set(relayIdx, localIdx);
+				} else {
+					names.push(`AI ${aiNum++}`);
+					colors.push(TANK_COLORS[localIdx] ?? '#CBFF70');
+				}
+			}
+			return { gameSeed: gs.seed, tankNames: names, tankColors: colors, relayToLocal };
+		}
+
+		// Single-player defaults
+		return {
+			...empty,
+			tankNames: [localName, ...Array.from({ length: opponentCount }, (_, i) => `AI ${i + 1}`)],
+			tankColors: [] as string[]
+		};
+	}
+
+	const { gameSeed, tankNames, tankColors, relayToLocal } = buildGameSetup();
+
+	// In-game notification when a multiplayer opponent disconnects
+	let playerLeftNotif = $state<string | null>(null);
+	let playerLeftTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const RELOAD_TIME = 2000;
 	const FIRE_FADE_DURATION = 1000;
@@ -41,6 +111,49 @@
 			window.dispatchEvent(new CustomEvent('tank-unlock-audio'));
 			touchActive = true;
 		}
+	});
+
+	onDestroy(() => {
+		if (playerLeftTimer !== null) clearTimeout(playerLeftTimer);
+		mp.latestPlayerLeft = null;
+		sessionStorage.removeItem('mp_gameStart');
+		sessionStorage.removeItem('mp_clientId');
+		// Tell the relay the player has left and clear stale room state so the lobby
+		// doesn't redirect back to a dissolved room on the next visit.
+		if (mp.room) {
+			send({ type: 'leave_room' });
+			mp.room = null;
+			mp.pendingJoiners = [];
+		}
+		mp.gameStart = null;
+	});
+
+	// Handle in-game player disconnect notifications (multiplayer only)
+	$effect(() => {
+		const notif = mp.latestPlayerLeft;
+		if (!notif) return;
+		mp.latestPlayerLeft = null;
+
+		// Mark that player's tank as destroyed so the game-over derived triggers correctly.
+		// assignment.tankIndex is the relay-assigned index; relayToLocal maps it to the local bar index.
+		const assignment = mp.gameStart?.assignments.find((a) => a.clientId === notif.clientId);
+		if (assignment !== undefined && relayToLocal !== null) {
+			const localIdx = relayToLocal.get(assignment.tankIndex);
+			if (localIdx !== undefined) {
+				const entry = tankHealthData[localIdx];
+				if (entry && !entry.destroyed) {
+					entry.health = 0;
+					entry.destroyed = true;
+				}
+			}
+		}
+
+		// Show banner notification, auto-dismiss after 5 s
+		playerLeftNotif = `${notif.name} has left the game`;
+		if (playerLeftTimer !== null) clearTimeout(playerLeftTimer);
+		playerLeftTimer = setTimeout(() => {
+			playerLeftNotif = null;
+		}, 5000);
 	});
 
 	function dispatchDrive(dx: number, dy: number) {
@@ -224,9 +337,22 @@
 <div class="game-container">
 	<Canvas shadows>
 		{#key restartKey}
-			<Scene {opponentCount} bind:tankHealthData {gameOver} {allGameOver} {muted} />
+			<Scene
+				{opponentCount}
+				bind:tankHealthData
+				{gameOver}
+				{allGameOver}
+				{muted}
+				seed={gameSeed}
+				{tankNames}
+				{tankColors}
+			/>
 		{/key}
 	</Canvas>
+
+	{#if playerLeftNotif}
+		<div class="player-left-notif">{playerLeftNotif}</div>
+	{/if}
 
 	{#if tankHealthData.length > 0}
 		{#if tankHealthData[0]}
@@ -237,6 +363,9 @@
 						style="height:{Math.max(0, tankHealthData[0].health)}%;background:{tankHealthData[0]
 							.color}"
 					></div>
+					{#if tankHealthData[0].name}
+						<span class="bar-name">{tankHealthData[0].name}</span>
+					{/if}
 				</div>
 			</div>
 		{/if}
@@ -245,6 +374,9 @@
 				{#each tankHealthData.slice(1) as d}
 					<div class="vbar" class:dead={d.destroyed}>
 						<div class="vfill" style="height:{Math.max(0, d.health)}%;background:{d.color}"></div>
+						{#if d.name}
+							<span class="bar-name">{d.name}</span>
+						{/if}
 					</div>
 				{/each}
 			</div>
@@ -526,6 +658,60 @@
 		bottom: 0;
 		left: 0;
 		right: 0;
+	}
+
+	.bar-name {
+		position: absolute;
+		bottom: 3px;
+		left: 0;
+		right: 0;
+		text-align: center;
+		writing-mode: vertical-lr;
+		transform: rotate(180deg);
+		font-size: 7px;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		color: rgba(255, 255, 255, 0.88);
+		text-shadow:
+			0 0 3px rgba(0, 0, 0, 0.9),
+			0 1px 2px rgba(0, 0, 0, 0.7);
+		overflow: hidden;
+		white-space: nowrap;
+		pointer-events: none;
+		max-height: calc(100% - 6px);
+		z-index: 1;
+	}
+
+	.player-health .bar-name {
+		font-size: 10px;
+	}
+
+	.player-left-notif {
+		position: absolute;
+		top: 3.5rem;
+		left: 50%;
+		transform: translateX(-50%);
+		background: rgba(10, 10, 10, 0.8);
+		border: 1px solid rgba(255, 200, 80, 0.4);
+		border-radius: 5px;
+		padding: 0.4rem 1rem;
+		font-size: 0.8rem;
+		color: #ffd060;
+		pointer-events: none;
+		z-index: 25;
+		white-space: nowrap;
+		animation: notif-fadein 0.2s ease;
+	}
+
+	@keyframes notif-fadein {
+		from {
+			opacity: 0;
+			transform: translateX(-50%) translateY(-4px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(-50%) translateY(0);
+		}
 	}
 
 	.charge-wrap {

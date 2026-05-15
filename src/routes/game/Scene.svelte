@@ -15,22 +15,30 @@
 		tankHealthData = $bindable<TankHealthEntry[]>([]),
 		gameOver = false,
 		allGameOver = false,
-		muted = false
+		muted = false,
+		seed = null as number | null,
+		tankNames = [] as string[],
+		tankColors = [] as string[]
 	}: {
 		opponentCount?: number;
 		tankHealthData?: TankHealthEntry[];
 		gameOver?: boolean;
 		allGameOver?: boolean;
 		muted?: boolean;
+		seed?: number | null;
+		tankNames?: string[];
+		tankColors?: string[];
 	} = $props();
 
 	// Unique audio listener ID per Scene instance — prevents Threlte's addAudioListener guard from
 	// blocking the new listener when {#key} mounts new Scene before tearing down the old one.
 	const audioId = Math.random().toString(36).slice(2);
 
-	// Seeded RNG — one seed per Scene mount, shared across terrain + spawn + tree generation
-	// so the same seed always produces the same world. Exposed on window for debugging.
-	const gameSeed = (Math.random() * 2 ** 32) | 0;
+	// Seeded RNG — use provided seed (multiplayer) or generate locally (single-player).
+	// All clients in a multiplayer game receive the same seed via game_start, guaranteeing
+	// identical terrain, spawns, and tree placement.
+	// untrack: we intentionally capture the initial value only — seed never changes after mount.
+	const gameSeed = untrack(() => seed) ?? ((Math.random() * 2 ** 32) | 0);
 	const rand = mulberry32(gameSeed);
 	setContext('audioId', audioId);
 
@@ -510,7 +518,8 @@
 		tankHealthData = Array.from({ length: TANK_COUNT }, (_, i) => ({
 			health: 100,
 			destroyed: false,
-			color: TANK_COLORS[i] ?? TANK_COLORS[TANK_COLORS.length - 1]
+			color: tankColors[i] ?? TANK_COLORS[i] ?? TANK_COLORS[TANK_COLORS.length - 1],
+			name: tankNames[i] ?? (i === 0 ? 'You' : `AI ${i}`)
 		}));
 
 		const prevGeo = terrainGeo;
@@ -645,7 +654,7 @@
 	controlled
 	chaseCamera
 	{gameOver}
-	tankColor={TANK_COLORS[0]}
+	tankColor={tankColors[0] ?? TANK_COLORS[0]}
 	spawnX={spawnPositions[0]?.x ?? 0}
 	spawnZ={spawnPositions[0]?.z ?? 0}
 	spawnHeading={spawnPositions[0]?.heading ?? 0}
@@ -659,7 +668,7 @@
 
 {#each spawnPositions.slice(1) as sp, i (i)}
 	<Tank
-		tankColor={TANK_COLORS[i + 1] ?? TANK_COLORS[TANK_COLORS.length - 1]}
+		tankColor={tankColors[i + 1] ?? TANK_COLORS[i + 1] ?? TANK_COLORS[TANK_COLORS.length - 1]}
 		spawnX={sp.x}
 		spawnZ={sp.z}
 		spawnHeading={sp.heading}

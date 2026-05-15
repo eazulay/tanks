@@ -29,7 +29,8 @@ interface RelayRoom {
 	hostClientId: string | null; // null until game starts; set to winner of benchmark vote
 	colors: Map<string, number>; // clientId → colorIndex
 	aiCount: number;
-	locked: boolean; // true once countdown begins
+	manuallyLocked: boolean; // set by room creator independent of countdown
+	locked: boolean; // true when manuallyLocked OR countdown is active
 	pendingJoins: Map<string, PendingJoin>; // clientId → join request
 	countdownTimer: ReturnType<typeof setTimeout> | null;
 	countdownEndsAt: number | null;
@@ -187,10 +188,13 @@ function removeFromRoom(clientId: string): void {
 	}
 
 	if (room.gameStarted) {
-		// In-game host disconnect: notify guests so they can show an error screen
 		if (room.hostClientId === clientId) {
+			// Host disconnect: tear down the game for everyone
 			broadcastRoom(roomId, { type: 'game_over' });
 			dissolveRoom(roomId);
+		} else {
+			// Non-host disconnect: notify remaining players so they can update their HUD
+			broadcastRoom(roomId, { type: 'player_left', clientId, name: client.name });
 		}
 		return;
 	}
@@ -227,7 +231,7 @@ function cancelCountdown(room: RelayRoom, reason: 'unanimous_cancel' | 'too_few_
 		room.countdownTimer = null;
 	}
 	room.countdownEndsAt = null;
-	room.locked = false;
+	room.locked = room.manuallyLocked; // restore host's manual lock state
 	room.startClickerIds.clear();
 	room.cancelClickerIds.clear();
 	broadcastRoom(room.roomId, { type: 'countdown_cancelled', reason });
@@ -281,7 +285,8 @@ function launchGame(room: RelayRoom): void {
 	const assignments = ordered.map((clientId, tankIndex) => ({
 		clientId,
 		tankIndex,
-		colorIndex: room.colors.get(clientId) ?? tankIndex
+		colorIndex: room.colors.get(clientId) ?? tankIndex,
+		name: clients.get(clientId)?.name ?? 'Player'
 	}));
 
 	broadcastRoom(room.roomId, {
@@ -325,6 +330,7 @@ function handleCreateRoom(clientId: string): void {
 		hostClientId: null,
 		colors: new Map([[clientId, 0]]),
 		aiCount: 1,
+		manuallyLocked: false,
 		locked: false,
 		pendingJoins: new Map(),
 		countdownTimer: null,
@@ -351,6 +357,14 @@ function handleRequestJoin(clientId: string, roomId: string): void {
 
 	room.pendingJoins.set(clientId, { clientId, name: client.name });
 	broadcastRoom(roomId, { type: 'join_requested', clientId, name: client.name });
+}
+
+function handleCancelJoin(clientId: string): void {
+	for (const room of rooms.values()) {
+		if (room.pendingJoins.delete(clientId)) {
+			broadcastRoom(room.roomId, { type: 'join_cancelled', clientId });
+		}
+	}
 }
 
 function handleAcceptJoin(acceptorId: string, targetId: string): void {
@@ -385,6 +399,22 @@ function handleAcceptJoin(acceptorId: string, targetId: string): void {
 		room.pendingJoins.clear();
 	}
 
+	broadcastLobby();
+}
+
+function handleLockRoom(clientId: string, locked: boolean): void {
+	const client = clients.get(clientId);
+	if (!client?.roomId) return;
+	const room = rooms.get(client.roomId);
+	if (!room || room.countdownTimer !== null) return;
+	if (room.playerIds[0] !== clientId) return; // only room creator
+	room.manuallyLocked = locked;
+	room.locked = locked;
+	if (locked) {
+		for (const [pendingId] of room.pendingJoins) sendTo(pendingId, { type: 'join_rejected', reason: 'locked' });
+		room.pendingJoins.clear();
+	}
+	broadcastRoom(room.roomId, { type: 'room_update', room: buildRoomState(room) });
 	broadcastLobby();
 }
 
@@ -444,6 +474,12 @@ function handleClickStart(clientId: string): void {
 		room.pendingJoins.clear();
 	}
 
+	// All players committed — no need to wait out the countdown
+	if (room.startClickerIds.size === room.playerIds.length && room.playerIds.length >= 2) {
+		launchGame(room);
+		return;
+	}
+
 	broadcastRoom(room.roomId, { type: 'room_update', room: buildRoomState(room) });
 }
 
@@ -501,7 +537,9 @@ function handleMessage(clientId: string, raw: string): void {
 		case 'create_room':   return handleCreateRoom(clientId);
 		case 'request_join':  return handleRequestJoin(clientId, msg.roomId);
 		case 'accept_join':   return handleAcceptJoin(clientId, msg.clientId);
+		case 'cancel_join':   return handleCancelJoin(clientId);
 		case 'leave_room':    return handleLeaveRoom(clientId);
+		case 'lock_room':     return handleLockRoom(clientId, msg.locked);
 		case 'set_ai_count':  return handleSetAiCount(clientId, msg.count);
 		case 'set_color':     return handleSetColor(clientId, msg.colorIndex);
 		case 'click_start':   return handleClickStart(clientId);
@@ -531,7 +569,7 @@ export function createRelay(wss: WebSocketServer): void {
 		send(ws, { type: 'lobby_update', rooms: buildLobbySummaries() });
 
 		ws.on('message', (data) => handleMessage(clientId, data.toString()));
-		ws.on('close', () => { removeFromRoom(clientId); clients.delete(clientId); });
-		ws.on('error', () => { removeFromRoom(clientId); clients.delete(clientId); });
+		ws.on('close', () => { removeFromRoom(clientId); handleCancelJoin(clientId); clients.delete(clientId); });
+		ws.on('error', () => { removeFromRoom(clientId); handleCancelJoin(clientId); clients.delete(clientId); });
 	});
 }
