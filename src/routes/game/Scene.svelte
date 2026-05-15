@@ -60,8 +60,8 @@
 	const SPAWN_CLEAR = 40; // no trees within this distance of a spawn point
 
 	// Hull tint colours — normalised so the brightest channel = 255, preserving texture brightness.
-	// Index 0 = player (olive), 1–3 = opponents (sand, steel blue, rust).
-	const TANK_COLORS = ['#CBFF70', '#FFD060', '#80CCFF', '#FF8055'];
+	// Index 0 = player (olive), 1–5 = opponents (sand, steel blue, rust, purple, mint).
+	const TANK_COLORS = ['#CBFF70', '#FFD060', '#80CCFF', '#FF8055', '#CC80FF', '#60FFD0'];
 
 	function generateHeights(): Float32Array {
 		const h = new Float32Array(N * N);

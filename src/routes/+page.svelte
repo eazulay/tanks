@@ -1,17 +1,3 @@
-<script lang="ts">
-	import { goto } from '$app/navigation';
-	import { unlockAudio } from '$lib/audioUnlock';
-
-	let opponents = $state(1);
-	let muted = $state(false);
-
-	function startGame(e: MouseEvent) {
-		e.preventDefault();
-		unlockAudio();
-		goto(`/game?opponents=${opponents}${muted ? '&muted=1' : ''}`);
-	}
-</script>
-
 <main>
 	<div class="content">
 		<h1>Tank Royale</h1>
@@ -19,27 +5,10 @@
 			Command your tank across randomly generated terrain. Outmaneuver the enemy, master the slopes,
 			and be the last one standing.
 		</p>
-
-		<div class="settings">
-			<div class="setting-group">
-				<span class="setting-label">Opponents</span>
-				<div class="radio-group">
-					{#each [1, 2, 3] as n}
-						<label class="radio-chip" class:selected={opponents === n}>
-							<input type="radio" name="opponents" value={n} bind:group={opponents} />
-							{n}
-						</label>
-					{/each}
-				</div>
-			</div>
-			<label class="mute-row">
-				<input type="checkbox" bind:checked={muted} />
-				<span class="mute-box" class:checked={muted}></span>
-				Mute Sounds
-			</label>
+		<div class="mode-buttons">
+			<a href="/single" class="mode-btn">Single Player</a>
+			<a href="/multi" class="mode-btn">Multiplayer</a>
 		</div>
-
-		<a href="/game?opponents={opponents}{muted ? '&muted=1' : ''}" class="start-btn" onclick={startGame}>Start Game</a>
 	</div>
 </main>
 
@@ -79,121 +48,17 @@
 		font-weight: 400;
 		color: #a8b89a;
 		line-height: 1.65;
-		margin: 0 0 2.4rem;
+		margin: 0 0 2.8rem;
 	}
 
-	.settings {
-		margin-bottom: 2rem;
-	}
-
-	.setting-label {
-		display: block;
-		font-family: 'Bebas Neue', sans-serif;
-		font-size: 0.85rem;
-		letter-spacing: 0.18em;
-		color: #a8b89a;
-		margin-bottom: 0.65rem;
-	}
-
-	.radio-group {
+	.mode-buttons {
 		display: flex;
-		gap: 0.5rem;
+		gap: 1rem;
 		justify-content: center;
+		flex-wrap: wrap;
 	}
 
-	.radio-chip {
-		position: relative;
-		cursor: pointer;
-		font-family: 'Bebas Neue', sans-serif;
-		font-size: 1.35rem;
-		letter-spacing: 0.1em;
-		color: #7a8a6a;
-		background: rgba(15, 22, 8, 0.7);
-		border: 1px solid #2e3e20;
-		border-radius: 4px;
-		padding: 0.3em 1.2em;
-		transition:
-			background 0.15s,
-			color 0.15s,
-			border-color 0.15s;
-		user-select: none;
-	}
-
-	.radio-chip:hover {
-		border-color: #5a6a4a;
-		color: #a8b89a;
-	}
-
-	.radio-chip.selected {
-		background: #d4a832;
-		color: #0a0f05;
-		border-color: #d4a832;
-	}
-
-	.radio-chip input {
-		position: absolute;
-		opacity: 0;
-		pointer-events: none;
-		width: 0;
-		height: 0;
-	}
-
-	.mute-row {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.55rem;
-		cursor: pointer;
-		font-family: 'Inter', sans-serif;
-		font-size: 0.9rem;
-		color: #a8b89a;
-		user-select: none;
-		margin-top: 1rem;
-	}
-
-	.mute-row:hover {
-		color: #c8d8b8;
-	}
-
-	.mute-row input {
-		position: absolute;
-		opacity: 0;
-		width: 0;
-		height: 0;
-	}
-
-	.mute-box {
-		width: 15px;
-		height: 15px;
-		border: 1px solid #3a4a2a;
-		border-radius: 3px;
-		background: rgba(15, 22, 8, 0.7);
-		flex-shrink: 0;
-		transition:
-			background 0.15s,
-			border-color 0.15s;
-	}
-
-	.mute-row:hover .mute-box {
-		border-color: #5a6a4a;
-	}
-
-	.mute-box.checked {
-		background: #d4a832;
-		border-color: #d4a832;
-	}
-
-	.mute-box.checked::after {
-		content: '';
-		display: block;
-		width: 4px;
-		height: 8px;
-		border: 2px solid #0a0f05;
-		border-top: none;
-		border-left: none;
-		transform: translate(5px, 1px) rotate(45deg);
-	}
-
-	.start-btn {
+	.mode-btn {
 		display: inline-block;
 		font-family: 'Bebas Neue', sans-serif;
 		font-size: 1.4rem;
@@ -210,13 +75,13 @@
 		box-shadow: 0 4px 16px rgba(212, 168, 50, 0.35);
 	}
 
-	.start-btn:hover {
+	.mode-btn:hover {
 		background: #e8bf4a;
 		transform: translateY(-2px);
 		box-shadow: 0 6px 24px rgba(212, 168, 50, 0.5);
 	}
 
-	.start-btn:active {
+	.mode-btn:active {
 		transform: translateY(0);
 		box-shadow: 0 2px 8px rgba(212, 168, 50, 0.3);
 	}

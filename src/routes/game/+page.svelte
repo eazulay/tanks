@@ -7,7 +7,7 @@
 	import type { TankHealthEntry } from '$lib/types';
 
 	const opponentCount = Math.min(
-		3,
+		5,
 		Math.max(1, parseInt(page.url.searchParams.get('opponents') ?? '1', 10))
 	);
 	const startMuted = page.url.searchParams.get('muted') === '1';
