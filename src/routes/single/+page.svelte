@@ -8,7 +8,9 @@
 	function startGame(e: MouseEvent) {
 		e.preventDefault();
 		unlockAudio();
-		goto(`/game?opponents=${opponents}${muted ? '&muted=1' : ''}`);
+		const seed = (Math.random() * 2 ** 32) | 0;
+		sessionStorage.setItem('sp_gameStart', JSON.stringify({ aiCount: opponents, seed }));
+		goto(`/game${muted ? '?muted=1' : ''}`);
 	}
 </script>
 
@@ -38,7 +40,7 @@
 		</div>
 
 		<a
-			href="/game?opponents={opponents}{muted ? '&muted=1' : ''}"
+			href="/game{muted ? '?muted=1' : ''}"
 			class="start-btn"
 			onclick={startGame}>Start Game</a
 		>

@@ -129,6 +129,9 @@ type CancelJoinMsg = { type: 'cancel_join' };
 /** Player voluntarily leaves their current room (treated the same as disconnect). */
 type LeaveRoomMsg = { type: 'leave_room' };
 
+/** After a full page reload, player attempts to re-enter their existing game session. */
+type RejoinGameMsg = { type: 'rejoin_game'; oldClientId: string };
+
 /** Room creator locks or unlocks the room. Locked rooms reject new join requests. */
 type LockRoomMsg = { type: 'lock_room'; locked: boolean };
 
@@ -201,6 +204,9 @@ type GameOverMsg = { type: 'game_over' };
 /** Relay elected a new physics host after the previous host disconnected. */
 type TransferHostMsg = { type: 'transfer_host'; newHostClientId: string };
 
+/** Sent to a client whose rejoin_game request was accepted — relay identity restored. */
+type RejoinAckMsg = { type: 'rejoin_ack' };
+
 /** Broadcast to remaining in-game players when a non-host player disconnects mid-game. */
 type PlayerLeftMsg = { type: 'player_left'; clientId: string; name: string };
 
@@ -212,6 +218,7 @@ export type ClientMessage =
 	| AcceptJoinMsg
 	| CancelJoinMsg
 	| LeaveRoomMsg
+	| RejoinGameMsg
 	| LockRoomMsg
 	| SetAiCountMsg
 	| SetColorMsg
@@ -294,7 +301,8 @@ export type ServerMessage =
 	| TreeIgnitedMsg
 	| GameOverMsg
 	| TransferHostMsg
-	| PlayerLeftMsg;
+	| PlayerLeftMsg
+	| RejoinAckMsg;
 
 // --- Helpers ---
 

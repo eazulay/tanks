@@ -17,13 +17,16 @@
 		spawnZ = 0,
 		spawnHeading = 0,
 		tankColor = '#CBFF70',
+		gameSeed = 0 as number,
 		localIndex = 0, // local slot in Scene's tank layout (0 = player, 1+ = opponents)
 		relayIndex = -1, // relay tankIndex (-1 = AI or single-player)
 		onfire = undefined as
 			| ((position: THREE.Vector3, velocity: THREE.Vector3, firingBodyUid: number) => void)
 			| undefined,
 		onexplode = undefined as ((position: THREE.Vector3, color: string) => void) | undefined,
-		onhealthchange = undefined as ((health: number, destroyed: boolean) => void) | undefined
+		onhealthchange = undefined as ((health: number, destroyed: boolean) => void) | undefined,
+		initialHealth = 100 as number,
+		initialDestroyed = false as boolean
 	} = $props();
 
 	const _controlled = untrack(() => controlled);
@@ -33,6 +36,10 @@
 	const _spawnHeading = untrack(() => spawnHeading);
 	const _localIndex = untrack(() => localIndex);
 	const _relayIndex = untrack(() => relayIndex);
+	const _gameSeed = untrack(() => gameSeed);
+	const SESSION_KEY = _controlled ? `player_pos_${_gameSeed}` : '';
+	const _initialHealth = untrack(() => initialHealth);
+	const _initialDestroyed = untrack(() => initialDestroyed);
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const treeTrunks = getContext<TreeTrunk[]>('treeTrunks');
@@ -55,6 +62,7 @@
 	let enginePlaybackRate = $state(0.5);
 	let engineVolume = $state(ENGINE_VOLUME);
 	let shotRef: { play: (delay?: number) => Promise<unknown> } | undefined = $state();
+	let positionSaveInterval: ReturnType<typeof setInterval> | null = null;
 
 	// Register this tank's body; other tanks write impulses here, we apply + decay them each frame.
 	// hitAt is written by Shell when a shell strikes us, triggering the fire+explosion sequence.
@@ -324,6 +332,7 @@
 	});
 
 	onDestroy(() => {
+		if (positionSaveInterval !== null) clearInterval(positionSaveInterval);
 		const idx = tankBodies?.indexOf(ownBody) ?? -1;
 		if (idx !== -1) tankBodies!.splice(idx, 1);
 		hullGeometry.dispose();
@@ -701,6 +710,56 @@
 		tankHeading = spawnHeading;
 		snapTankToTerrain(spawnX, spawnZ);
 		resetCamera();
+		if (_controlled && SESSION_KEY) {
+			try {
+				const raw = sessionStorage.getItem(SESSION_KEY);
+				if (raw) {
+					const saved = JSON.parse(raw) as {
+						x: number;
+						z: number;
+						heading: number;
+						turretHeading?: number;
+						health: number;
+					};
+					if (saved.health > 0) {
+						tankHeading = saved.heading;
+						turretHeading = saved.turretHeading ?? 0;
+						health = Math.min(saved.health, TANK_MAX_HEALTH);
+						snapTankToTerrain(saved.x, saved.z);
+						resetCamera();
+					}
+				}
+			} catch {
+				// ignore corrupt data
+			}
+			positionSaveInterval = setInterval(() => {
+				if (tankDestroyed) return;
+				sessionStorage.setItem(
+					SESSION_KEY,
+					JSON.stringify({
+						x: tankPosition.x,
+						z: tankPosition.z,
+						heading: tankHeading,
+						turretHeading,
+						health
+					})
+				);
+			}, 2000);
+		}
+		// Restore initial health/destroyed for opponent tanks after a page refresh.
+		// Scene.svelte restores tankHealthData from sessionStorage before mount, and passes
+		// the values here so destroyed opponents stay gone and damaged ones keep their health.
+		if (!_controlled && (_initialDestroyed || _initialHealth < TANK_MAX_HEALTH)) {
+			if (_initialDestroyed) {
+				health = 0;
+				burning = false;
+				tankDestroyed = true;
+				ownBody.hitAt = Date.now();
+				if (tankGroupRef) tankGroupRef.visible = false;
+			} else {
+				health = _initialHealth;
+			}
+		}
 	});
 
 	// --- Per-frame loop ---

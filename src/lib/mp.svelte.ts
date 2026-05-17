@@ -62,6 +62,21 @@ function handle(msg: ServerMessage): void {
 	switch (msg.type) {
 		case 'welcome':
 			mp.clientId = msg.clientId;
+			// If we have a game in session storage, try to rejoin under the original identity
+			if (browser) {
+				const oldId = sessionStorage.getItem('mp_clientId');
+				const hasGame = !!sessionStorage.getItem('mp_gameStart');
+				if (oldId && hasGame && oldId !== msg.clientId) {
+					send({ type: 'rejoin_game', oldClientId: oldId });
+				}
+			}
+			break;
+		case 'rejoin_ack':
+			// Relay restored our original identity — update mp.clientId to match
+			if (browser) {
+				const oldId = sessionStorage.getItem('mp_clientId');
+				if (oldId) mp.clientId = oldId;
+			}
 			break;
 		case 'lobby_update':
 			mp.rooms = msg.rooms;

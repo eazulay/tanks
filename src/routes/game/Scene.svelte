@@ -373,6 +373,8 @@
 	// Terrain save/restore — keyed by game seed so reloading the same game recovers the state.
 	// Only height and colour changes are tracked (colour only changes on craters).
 	const TERRAIN_SAVE_KEY = `terrain_${gameSeed}`;
+	const TREE_FIRE_KEY = `tree_fire_${gameSeed}`;
+	const OPP_HEALTH_KEY = `opp_health_${gameSeed}`; // sessionStorage — opponent health per session
 	const TERRAIN_SAVE_INTERVAL = 8000; // ms between localStorage writes
 	const TERRAIN_MAX_AGE = 6 * 60 * 60 * 1000; // 6 hours — older saves are pruned on game start
 	// Set of vertex indices that differ from the seeded initial state
@@ -415,6 +417,65 @@
 		}
 	}
 
+	function saveTreeFireState() {
+		if (!browser) return;
+		const fires: { i: number; burntAt: number }[] = [];
+		for (let i = 0; i < trees.length; i++) {
+			if (trees[i].burntAt != null) fires.push({ i, burntAt: trees[i].burntAt! });
+		}
+		try {
+			if (fires.length > 0) {
+				localStorage.setItem(TREE_FIRE_KEY, JSON.stringify({ ts: Date.now(), fires }));
+			} else {
+				localStorage.removeItem(TREE_FIRE_KEY);
+			}
+		} catch {
+			// Storage quota exceeded — ignore
+		}
+	}
+
+	function restoreTreeFireState() {
+		if (!browser) return;
+		try {
+			const raw = localStorage.getItem(TREE_FIRE_KEY);
+			if (!raw) return;
+			const { fires } = JSON.parse(raw) as { fires: { i: number; burntAt: number }[] };
+			for (const { i, burntAt } of fires) {
+				if (trees[i]) trees[i].burntAt = burntAt;
+			}
+		} catch {
+			// Malformed save data — ignore
+		}
+	}
+
+	function saveOppHealthState() {
+		if (!browser || !_isMultiplayer) return;
+		try {
+			const data = tankHealthData.slice(1).map((e) => ({ health: e.health, destroyed: e.destroyed }));
+			sessionStorage.setItem(OPP_HEALTH_KEY, JSON.stringify(data));
+		} catch {
+			// Storage quota exceeded — ignore
+		}
+	}
+
+	function restoreOppHealthState() {
+		if (!browser || !_isMultiplayer) return;
+		try {
+			const raw = sessionStorage.getItem(OPP_HEALTH_KEY);
+			if (!raw) return;
+			const data = JSON.parse(raw) as { health: number; destroyed: boolean }[];
+			for (let i = 0; i < data.length; i++) {
+				const entry = tankHealthData[i + 1];
+				if (entry) {
+					entry.health = data[i].health;
+					entry.destroyed = data[i].destroyed;
+				}
+			}
+		} catch {
+			// Malformed save data — ignore
+		}
+	}
+
 	// Remove terrain saves for other seeds that are older than TERRAIN_MAX_AGE.
 	// Never removes the current seed's entry — that belongs to this game.
 	function pruneOldTerrainSaves() {
@@ -423,7 +484,11 @@
 		const toRemove: string[] = [];
 		for (let i = 0; i < localStorage.length; i++) {
 			const key = localStorage.key(i);
-			if (!key || !key.startsWith('terrain_') || key === TERRAIN_SAVE_KEY) continue;
+			if (!key) continue;
+			const isOldKey =
+				(key.startsWith('terrain_') && key !== TERRAIN_SAVE_KEY) ||
+				(key.startsWith('tree_fire_') && key !== TREE_FIRE_KEY);
+			if (!isOldKey) continue;
 			try {
 				const parsed = JSON.parse(localStorage.getItem(key) ?? '{}') as { ts?: number };
 				if (!parsed.ts || parsed.ts < cutoff) toRemove.push(key);
@@ -656,6 +721,7 @@
 				}
 			}
 		}
+		if (ignitedTreeIds.length > 0) saveTreeFireState();
 		const id = nextExplodeId++;
 		explosions.push({ id, position, tankExplosion: false });
 		if (_isMultiplayer) {
@@ -690,6 +756,7 @@
 				ignitedTreeIds.push(t.id);
 			}
 		}
+		if (ignitedTreeIds.length > 0) saveTreeFireState();
 		explosions.push({ id: nextExplodeId++, position, tankExplosion: true, color });
 		if (_isMultiplayer) {
 			send({ type: 'explosion', x: position.x, y: position.y, z: position.z, tankExplosion: true, color });
@@ -818,6 +885,11 @@
 			cell.push(vol);
 		}
 
+		// Restore tree fire state from localStorage (same-seed game refresh)
+		restoreTreeFireState();
+		// Restore opponent health/destroyed state from sessionStorage (same-seed multiplayer refresh)
+		restoreOppHealthState();
+
 		shells = [];
 		explosions = [];
 		landedSheets = [];
@@ -831,8 +903,11 @@
 	let saveInterval: ReturnType<typeof setInterval> | null = null;
 
 	onMount(() => {
-		// Periodically persist any terrain modifications to localStorage
-		saveInterval = setInterval(saveTerrainState, TERRAIN_SAVE_INTERVAL);
+		// Periodically persist terrain and opponent health state
+		saveInterval = setInterval(() => {
+			saveTerrainState();
+			saveOppHealthState();
+		}, TERRAIN_SAVE_INTERVAL);
 
 		if (!_isMultiplayer) return;
 
@@ -905,7 +980,10 @@
 			},
 			onTreeIgnited(treeId) {
 				const tree = trees.find((t) => t.id === treeId);
-				if (tree && tree.burntAt === null) tree.burntAt = Date.now();
+				if (tree && tree.burntAt === null) {
+					tree.burntAt = Date.now();
+					saveTreeFireState();
+				}
 			},
 			onGameOver() {
 				// Tank state updates will drive tankHealthData naturally; nothing extra needed here.
@@ -957,8 +1035,11 @@
 		if (saveInterval !== null) clearInterval(saveInterval);
 		if (_quitting) {
 			localStorage.removeItem(TERRAIN_SAVE_KEY);
+			localStorage.removeItem(TREE_FIRE_KEY);
+			sessionStorage.removeItem(OPP_HEALTH_KEY);
 		} else {
 			saveTerrainState(); // reload path — preserve crater state
+			saveOppHealthState();
 		}
 	});
 </script>
@@ -997,6 +1078,7 @@
 	chaseCamera
 	{gameOver}
 	tankColor={tankColors[0] ?? TANK_COLORS[0]}
+	{gameSeed}
 	localIndex={0}
 	relayIndex={_selfRelayIndex}
 	spawnX={spawnPositions[_selfRelayIndex]?.x ?? 0}
@@ -1023,8 +1105,11 @@
 		gameOver={allGameOver}
 		onfire={handleOpponentFire}
 		onexplode={handleTankExplosion}
+		initialHealth={tankHealthData[localIdx]?.health ?? 100}
+		initialDestroyed={tankHealthData[localIdx]?.destroyed ?? false}
 		onhealthchange={(h, d) => {
 			if (tankHealthData[localIdx]) { tankHealthData[localIdx].health = h; tankHealthData[localIdx].destroyed = d; }
+			if (d) saveOppHealthState();
 		}}
 		bind:this={opponentTankRefs[localIdx - 1]}
 	/>

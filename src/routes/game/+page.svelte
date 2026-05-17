@@ -6,14 +6,9 @@
 	import { onMount, onDestroy } from 'svelte';
 	import Joystick from '$lib/Joystick.svelte';
 	import type { TankHealthEntry } from '$lib/types';
-	import { mp, send, TANK_COLORS, type GameStart } from '$lib/mp.svelte.js';
+	import { mp, send, connect, TANK_COLORS, type GameStart } from '$lib/mp.svelte.js';
 
-	const opponentCount = Math.min(
-		5,
-		Math.max(0, parseInt(page.url.searchParams.get('opponents') ?? '1', 10))
-	);
 	const startMuted = page.url.searchParams.get('muted') === '1';
-	const tankCount = opponentCount + 1;
 
 	let tankHealthData = $state<TankHealthEntry[]>([]);
 
@@ -47,6 +42,8 @@
 
 		if (gs) {
 			// Multiplayer — reorder so local index 0 = self, 1..n = opponents in relay-tankIndex order.
+			// Use gs directly for the tank count; ?opponents= URL param is single-player only.
+			const totalTanks = gs.assignments.length + gs.aiCount;
 			const asgn = gs.assignments;
 			const selfAsgn = asgn.find((a) => a.clientId === selfClientId);
 			const names: string[] = [localName];
@@ -54,7 +51,7 @@
 			const relayToLocal = new Map<number, number>();
 			if (selfAsgn) relayToLocal.set(selfAsgn.tankIndex, 0);
 			let aiNum = 1;
-			for (let relayIdx = 0; relayIdx < tankCount; relayIdx++) {
+			for (let relayIdx = 0; relayIdx < totalTanks; relayIdx++) {
 				if (selfAsgn && relayIdx === selfAsgn.tankIndex) continue;
 				const localIdx = names.length;
 				const a = asgn.find((a) => a.tankIndex === relayIdx);
@@ -70,15 +67,28 @@
 			return { gameSeed: gs.seed, tankNames: names, tankColors: colors, relayToLocal };
 		}
 
-		// Single-player defaults
+		// Single-player — opponent count and seed from sessionStorage (written by /single setup page)
+		let spOpponentCount = 1;
+		let spSeed: number | null = null;
+		try {
+			const raw = sessionStorage.getItem('sp_gameStart');
+			if (raw) {
+				const sp = JSON.parse(raw) as { aiCount: number; seed?: number };
+				spOpponentCount = Math.min(5, Math.max(0, sp.aiCount));
+				spSeed = sp.seed ?? null;
+			}
+		} catch { /* ignore */ }
 		return {
 			...empty,
-			tankNames: [localName, ...Array.from({ length: opponentCount }, (_, i) => `AI ${i + 1}`)],
+			gameSeed: spSeed,
+			tankNames: [localName, ...Array.from({ length: spOpponentCount }, (_, i) => `AI ${i + 1}`)],
 			tankColors: [] as string[]
 		};
 	}
 
 	const { gameSeed, tankNames, tankColors, relayToLocal } = buildGameSetup();
+	// Authoritative count from gs (multiplayer) or URL param via spOpponentCount (single-player)
+	const opponentCount = tankNames.length - 1;
 
 	// Multiplayer props for Scene — computed once from gameStart (stable after mount)
 	const selfClientId = browser
@@ -139,6 +149,11 @@
 			window.dispatchEvent(new CustomEvent('tank-unlock-audio'));
 			touchActive = true;
 		}
+		// Reconnect to the relay after an F5 reload in a multiplayer game.
+		// connect() is idempotent — no-op if the WS is already open (normal navigation).
+		if (gs) {
+			connect(localStorage.getItem('playerName') ?? 'Player');
+		}
 	});
 
 	onDestroy(() => {
@@ -146,6 +161,7 @@
 		mp.latestPlayerLeft = null;
 		sessionStorage.removeItem('mp_gameStart');
 		sessionStorage.removeItem('mp_clientId');
+		sessionStorage.removeItem('sp_gameStart');
 		// Tell the relay the player has left and clear stale room state so the lobby
 		// doesn't redirect back to a dissolved room on the next visit.
 		if (mp.room) {
@@ -164,7 +180,7 @@
 
 		// Mark that player's tank as destroyed so the game-over derived triggers correctly.
 		// assignment.tankIndex is the relay-assigned index; relayToLocal maps it to the local bar index.
-		const assignment = mp.gameStart?.assignments.find((a) => a.clientId === notif.clientId);
+		const assignment = (gs as GameStart | null)?.assignments.find((a) => a.clientId === notif.clientId);
 		if (assignment !== undefined && relayToLocal !== null) {
 			const localIdx = relayToLocal.get(assignment.tankIndex);
 			if (localIdx !== undefined) {

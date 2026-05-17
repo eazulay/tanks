@@ -46,6 +46,20 @@ interface RelayRoom {
 const clients = new Map<string, RelayClient>();
 const rooms = new Map<string, RelayRoom>();
 
+// Maps each live WebSocket to the clientId that should handle its messages.
+// Updated during rejoin so a new WS is treated as the original player's identity.
+const wsToClientId = new Map<WebSocket, string>();
+
+// Disconnected in-game players who may reconnect within REJOIN_GRACE_MS before
+// player_left is broadcast and their room slot is cleared.
+const REJOIN_GRACE_MS = 20_000;
+interface PendingLeave {
+	timer: ReturnType<typeof setTimeout>;
+	roomId: string;
+	colorIndex: number;
+}
+const pendingLeaves = new Map<string, PendingLeave>();
+
 // ---------------------------------------------------------------------------
 // Send helpers
 // ---------------------------------------------------------------------------
@@ -161,7 +175,7 @@ function electHost(room: RelayRoom): string {
 // Room lifecycle
 // ---------------------------------------------------------------------------
 
-function removeFromRoom(clientId: string): void {
+function removeFromRoom(clientId: string, sendPlayerLeft = true): void {
 	const client = clients.get(clientId);
 	if (!client?.roomId) return;
 
@@ -188,8 +202,13 @@ function removeFromRoom(clientId: string): void {
 	}
 
 	if (room.gameStarted) {
+		// Only notify remaining players when this is an intentional leave (Quit button),
+		// not a plain WebSocket close (e.g. F5 reload) — the caller controls this via sendPlayerLeft.
+		if (sendPlayerLeft) {
+			broadcastRoom(roomId, { type: 'player_left', clientId, name: client.name });
+		}
 		if (room.hostClientId === clientId) {
-			// Host disconnect: elect the first remaining connected client as new host
+			// Elect a new host to take over AI physics regardless of intent.
 			const newHostId = room.playerIds.find((id) => {
 				const c = clients.get(id);
 				return c != null && c.ws.readyState === 1; // WebSocket.OPEN
@@ -200,9 +219,6 @@ function removeFromRoom(clientId: string): void {
 			} else {
 				dissolveRoom(roomId);
 			}
-		} else {
-			// Non-host disconnect: notify remaining players so they can update their HUD
-			broadcastRoom(roomId, { type: 'player_left', clientId, name: client.name });
 		}
 		return;
 	}
@@ -223,6 +239,22 @@ function removeFromRoom(clientId: string): void {
 
 	broadcastRoom(roomId, { type: 'room_update', room: buildRoomState(room) });
 	broadcastLobby();
+}
+
+/** Schedule a delayed player_left for an in-game disconnect that might be a page reload. */
+function schedulePendingLeave(clientId: string): void {
+	if (pendingLeaves.has(clientId)) return; // already scheduled
+	const client = clients.get(clientId);
+	if (!client?.roomId) return;
+	const { roomId } = client;
+	const colorIndex = rooms.get(roomId)?.colors.get(clientId) ?? 0;
+	const timer = setTimeout(() => {
+		pendingLeaves.delete(clientId);
+		removeFromRoom(clientId, true); // grace period expired — treat as deliberate leave
+		handleCancelJoin(clientId);
+		clients.delete(clientId);
+	}, REJOIN_GRACE_MS);
+	pendingLeaves.set(clientId, { timer, roomId, colorIndex });
 }
 
 function dissolveRoom(roomId: string): void {
@@ -430,6 +462,32 @@ function handleLeaveRoom(clientId: string): void {
 	removeFromRoom(clientId);
 }
 
+function handleRejoin(newClientId: string, oldClientId: string): void {
+	const pending = pendingLeaves.get(oldClientId);
+	if (!pending) return; // grace period expired or not recognised — ignore
+	clearTimeout(pending.timer);
+	pendingLeaves.delete(oldClientId);
+
+	const newClient = clients.get(newClientId);
+	const oldClient = clients.get(oldClientId);
+	if (!newClient || !oldClient) return;
+
+	const room = rooms.get(pending.roomId);
+	if (!room?.gameStarted) {
+		// Game ended while the player was disconnected — nothing to restore
+		clients.delete(newClientId);
+		return;
+	}
+
+	// Remap the new WS so all future message-handler calls use the original clientId.
+	// This preserves room.playerIds and gs.assignments on every client without changes.
+	wsToClientId.set(newClient.ws, oldClientId);
+	oldClient.ws = newClient.ws; // point old entry at live socket
+	clients.delete(newClientId); // remove the transient new entry
+
+	send(oldClient.ws, { type: 'rejoin_ack' });
+}
+
 function handleSetAiCount(clientId: string, count: number): void {
 	const client = clients.get(clientId);
 	if (!client?.roomId) return;
@@ -548,6 +606,7 @@ function handleMessage(clientId: string, raw: string): void {
 		case 'accept_join':   return handleAcceptJoin(clientId, msg.clientId);
 		case 'cancel_join':   return handleCancelJoin(clientId);
 		case 'leave_room':    return handleLeaveRoom(clientId);
+		case 'rejoin_game':   return handleRejoin(clientId, msg.oldClientId);
 		case 'lock_room':     return handleLockRoom(clientId, msg.locked);
 		case 'set_ai_count':  return handleSetAiCount(clientId, msg.count);
 		case 'set_color':     return handleSetColor(clientId, msg.colorIndex);
@@ -571,14 +630,29 @@ function handleMessage(clientId: string, raw: string): void {
 export function createRelay(wss: WebSocketServer): void {
 	wss.on('connection', (ws: WebSocket) => {
 		const clientId = randomUUID();
+		wsToClientId.set(ws, clientId);
 		const client: RelayClient = { clientId, ws, name: 'Tank', benchmarkScore: 0, roomId: null };
 		clients.set(clientId, client);
 
 		send(ws, { type: 'welcome', clientId });
 		send(ws, { type: 'lobby_update', rooms: buildLobbySummaries() });
 
-		ws.on('message', (data) => handleMessage(clientId, data.toString()));
-		ws.on('close', () => { removeFromRoom(clientId); handleCancelJoin(clientId); clients.delete(clientId); });
-		ws.on('error', () => { removeFromRoom(clientId); handleCancelJoin(clientId); clients.delete(clientId); });
+		ws.on('message', (data) => handleMessage(wsToClientId.get(ws) ?? clientId, data.toString()));
+		ws.on('close', () => {
+			const effectiveId = wsToClientId.get(ws) ?? clientId;
+			wsToClientId.delete(ws);
+			const c = clients.get(effectiveId);
+			const inActiveGame = !!(c?.roomId && rooms.get(c.roomId)?.gameStarted);
+			if (inActiveGame) {
+				// Give the client REJOIN_GRACE_MS to reconnect (handles F5 / short network drops).
+				// player_left is only broadcast if they don't come back in time.
+				schedulePendingLeave(effectiveId);
+			} else {
+				removeFromRoom(effectiveId, false);
+				handleCancelJoin(effectiveId);
+				clients.delete(effectiveId);
+			}
+		});
+		ws.on('error', () => {}); // 'close' always fires after 'error' and handles cleanup
 	});
 }
