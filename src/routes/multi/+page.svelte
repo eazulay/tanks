@@ -68,6 +68,11 @@
 			<span class="status-label">{mp.connected ? 'Connected' : 'Connecting…'}</span>
 		</div>
 
+		<p class="rooms-info">
+			Create a room and share the code with friends, or request to join an existing one — the host
+			decides who gets in. Fill empty slots with AI bots, then start when you're ready.
+		</p>
+
 		<div class="rooms-panel">
 			{#if mp.rooms.length === 0}
 				<p class="empty-msg">No open rooms. Create one to get started.</p>
@@ -119,7 +124,9 @@
 		{/if}
 
 		{#if joinErrorLabel}
-			<p class="error-msg">{joinErrorLabel} <button class="btn-text" onclick={clearPending}>Dismiss</button></p>
+			<p class="error-msg">
+				{joinErrorLabel} <button class="btn-text" onclick={clearPending}>Dismiss</button>
+			</p>
 		{/if}
 
 		<button
@@ -231,6 +238,15 @@
 		color: #5a6a4a;
 	}
 
+	.rooms-info {
+		font-family: 'Inter', sans-serif;
+		font-size: 0.85rem;
+		color: #a8b89a;
+		text-align: center;
+		margin: 0 0 1.4rem;
+		line-height: 1.55;
+	}
+
 	/* ---- Room list ---- */
 
 	.rooms-panel {
@@ -238,7 +254,7 @@
 		border: 1px solid rgba(212, 168, 50, 0.15);
 		border-radius: 6px;
 		background: rgba(255, 255, 255, 0.03);
-		min-height: 80px;
+		min-height: 54px;
 		margin-bottom: 1rem;
 		overflow: hidden;
 	}
