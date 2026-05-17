@@ -37,7 +37,11 @@
 	const _localIndex = untrack(() => localIndex);
 	const _relayIndex = untrack(() => relayIndex);
 	const _gameSeed = untrack(() => gameSeed);
-	const SESSION_KEY = _controlled ? `player_pos_${_gameSeed}` : '';
+	const SESSION_KEY = _controlled
+		? `player_pos_${_gameSeed}`
+		: _relayIndex === -1 && _gameSeed !== null
+			? `ai_pos_${_gameSeed}_${_localIndex}`
+			: '';
 	const _initialHealth = untrack(() => initialHealth);
 	const _initialDestroyed = untrack(() => initialDestroyed);
 
@@ -744,6 +748,23 @@
 						health
 					})
 				);
+			}, 2000);
+		}
+		// Restore position for single-player AI tanks after F5 (relayIndex === -1 = not multiplayer).
+		if (!_controlled && SESSION_KEY && !_initialDestroyed) {
+			try {
+				const raw = sessionStorage.getItem(SESSION_KEY);
+				if (raw) {
+					const saved = JSON.parse(raw) as { x: number; z: number; heading: number };
+					tankHeading = saved.heading;
+					snapTankToTerrain(saved.x, saved.z);
+				}
+			} catch {
+				// ignore corrupt data
+			}
+			positionSaveInterval = setInterval(() => {
+				if (tankDestroyed) return;
+				sessionStorage.setItem(SESSION_KEY, JSON.stringify({ x: tankPosition.x, z: tankPosition.z, heading: tankHeading }));
 			}, 2000);
 		}
 		// Restore initial health/destroyed for opponent tanks after a page refresh.

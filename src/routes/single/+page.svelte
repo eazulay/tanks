@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
 	import { unlockAudio } from '$lib/audioUnlock';
 
-	let opponents = $state(1);
+	let opponents = $state(browser ? (parseInt(localStorage.getItem('sp_aiCount') ?? '1', 10) || 1) : 1);
 	let muted = $state(false);
 
 	function startGame(e: MouseEvent) {
 		e.preventDefault();
 		unlockAudio();
+		localStorage.setItem('sp_aiCount', String(opponents));
 		const seed = (Math.random() * 2 ** 32) | 0;
 		sessionStorage.setItem('sp_gameStart', JSON.stringify({ aiCount: opponents, seed }));
 		goto(`/game${muted ? '?muted=1' : ''}`);

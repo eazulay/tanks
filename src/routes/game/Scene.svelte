@@ -449,7 +449,7 @@
 	}
 
 	function saveOppHealthState() {
-		if (!browser || !_isMultiplayer) return;
+		if (!browser) return;
 		try {
 			const data = tankHealthData.slice(1).map((e) => ({ health: e.health, destroyed: e.destroyed }));
 			sessionStorage.setItem(OPP_HEALTH_KEY, JSON.stringify(data));
@@ -459,7 +459,7 @@
 	}
 
 	function restoreOppHealthState() {
-		if (!browser || !_isMultiplayer) return;
+		if (!browser) return;
 		try {
 			const raw = sessionStorage.getItem(OPP_HEALTH_KEY);
 			if (!raw) return;
@@ -887,7 +887,7 @@
 
 		// Restore tree fire state from localStorage (same-seed game refresh)
 		restoreTreeFireState();
-		// Restore opponent health/destroyed state from sessionStorage (same-seed multiplayer refresh)
+		// Restore opponent health/destroyed state from sessionStorage (same-seed game refresh)
 		restoreOppHealthState();
 
 		shells = [];
@@ -1037,9 +1037,16 @@
 			localStorage.removeItem(TERRAIN_SAVE_KEY);
 			localStorage.removeItem(TREE_FIRE_KEY);
 			sessionStorage.removeItem(OPP_HEALTH_KEY);
-		} else {
-			saveTerrainState(); // reload path — preserve crater state
+		} else if (_isMultiplayer) {
+			saveTerrainState();
 			saveOppHealthState();
+		} else {
+			// Single-player restart — F5 never calls onDestroy, so this branch only runs on Restart.
+			// Clear per-session and terrain state so the new game starts fresh.
+			localStorage.removeItem(TERRAIN_SAVE_KEY);
+			localStorage.removeItem(TREE_FIRE_KEY);
+			sessionStorage.removeItem(OPP_HEALTH_KEY);
+			sessionStorage.removeItem(`player_pos_${gameSeed}`);
 		}
 	});
 </script>

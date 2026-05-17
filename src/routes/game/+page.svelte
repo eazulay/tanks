@@ -77,7 +77,9 @@
 				spOpponentCount = Math.min(5, Math.max(0, sp.aiCount));
 				spSeed = sp.seed ?? null;
 			}
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 		return {
 			...empty,
 			gameSeed: spSeed,
@@ -125,7 +127,6 @@
 	const RELOAD_TIME = 2000;
 	const FIRE_FADE_DURATION = 1000;
 
-	let restartKey = $state(0);
 	let locked = $state(false);
 	let chargeLevel = $state(0);
 	let chargeVisible = $state(false);
@@ -180,7 +181,9 @@
 
 		// Mark that player's tank as destroyed so the game-over derived triggers correctly.
 		// assignment.tankIndex is the relay-assigned index; relayToLocal maps it to the local bar index.
-		const assignment = (gs as GameStart | null)?.assignments.find((a) => a.clientId === notif.clientId);
+		const assignment = (gs as GameStart | null)?.assignments.find(
+			(a) => a.clientId === notif.clientId
+		);
 		if (assignment !== undefined && relayToLocal !== null) {
 			const localIdx = relayToLocal.get(assignment.tankIndex);
 			if (localIdx !== undefined) {
@@ -245,13 +248,6 @@
 	let allGameOver = $derived(
 		tankHealthData.length > 0 && tankHealthData.filter((d) => !d.destroyed).length <= 1
 	);
-
-	function restartGame() {
-		restartKey++;
-		resetCharge();
-		reloadStart = null;
-		reloadProgress = 1;
-	}
 
 	function startCharge() {
 		if (chargeStart === null && fadeStart === null && reloadProgress >= 1 && !gameOver) {
@@ -380,22 +376,20 @@
 
 <div class="game-container">
 	<Canvas shadows>
-		{#key restartKey}
-			<Scene
-				{opponentCount}
-				bind:tankHealthData
-				{gameOver}
-				{allGameOver}
-				{muted}
-				seed={gameSeed}
-				{tankNames}
-				{tankColors}
-				{isHost}
-				{selfRelayIndex}
-				{relayToLocal}
-				bind:this={sceneRef}
-			/>
-		{/key}
+		<Scene
+			{opponentCount}
+			bind:tankHealthData
+			{gameOver}
+			{allGameOver}
+			{muted}
+			seed={gameSeed}
+			{tankNames}
+			{tankColors}
+			{isHost}
+			{selfRelayIndex}
+			{relayToLocal}
+			bind:this={sceneRef}
+		/>
 	</Canvas>
 
 	{#if playerLeftNotif}
@@ -485,9 +479,6 @@
 		<div class="overlay">
 			<div class="panel">
 				<div class="buttons">
-					{#if !relayToLocal}
-						<button onclick={restartGame}>Restart</button>
-					{/if}
 					<a href="/" class="button" onclick={handleQuit}>Quit</a>
 				</div>
 			</div>
@@ -513,16 +504,12 @@
 						<li>Z · zoom (5× finer aim)</li>
 						<li>Hold LMB / Space · charge, release · fire</li>
 						<li>M · mute / unmute</li>
-						<li>Esc · release mouse</li>
 					</ul>
 					<div class="buttons">
 						<button class="green-btn" onclick={() => document.documentElement.requestPointerLock()}
 							>Mouse Control</button
 						>
 						<button onclick={toggleMute}>{muted ? 'Unmute' : 'Mute'}</button>
-						{#if !relayToLocal}
-							<button onclick={restartGame}>Restart</button>
-						{/if}
 						<a href="/" class="button" onclick={handleQuit}>Quit</a>
 					</div>
 				</div>
