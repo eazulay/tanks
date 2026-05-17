@@ -80,6 +80,34 @@
 
 	const { gameSeed, tankNames, tankColors, relayToLocal } = buildGameSetup();
 
+	// Multiplayer props for Scene — computed once from gameStart (stable after mount)
+	const selfClientId = browser
+		? (mp.clientId ?? sessionStorage.getItem('mp_clientId') ?? null)
+		: null;
+	const gs = browser
+		? (mp.gameStart ??
+			(() => {
+				try {
+					const r = sessionStorage.getItem('mp_gameStart');
+					return r ? JSON.parse(r) : null;
+				} catch {
+					return null;
+				}
+			})())
+		: null;
+	const isHost = gs ? gs.hostClientId === selfClientId : true;
+	const selfRelayIndex = gs
+		? (gs.assignments.find(
+				(a: { clientId: string; tankIndex: number }) => a.clientId === selfClientId
+			)?.tankIndex ?? 0)
+		: 0;
+
+	let sceneRef: { quitGame: () => void } | undefined = $state();
+
+	function handleQuit() {
+		sceneRef?.quitGame();
+	}
+
 	// In-game notification when a multiplayer opponent disconnects
 	let playerLeftNotif = $state<string | null>(null);
 	let playerLeftTimer: ReturnType<typeof setTimeout> | null = null;
@@ -346,6 +374,10 @@
 				seed={gameSeed}
 				{tankNames}
 				{tankColors}
+				{isHost}
+				{selfRelayIndex}
+				{relayToLocal}
+				bind:this={sceneRef}
 			/>
 		{/key}
 	</Canvas>
@@ -419,8 +451,8 @@
 						class="fire-btn"
 						ontouchstart={onFireTouchStart}
 						ontouchend={onFireTouchEnd}
-						ontouchcancel={onFireTouchEnd}
-					>FIRE</button>
+						ontouchcancel={onFireTouchEnd}>FIRE</button
+					>
 				</div>
 			</div>
 			<div class="stick-wrap">
@@ -429,7 +461,7 @@
 		</div>
 		<div class="touch-hud">
 			<button class="touch-btn" onclick={toggleMute}>{muted ? 'Unmute' : 'Mute'}</button>
-			<a href="/" class="touch-btn">Quit</a>
+			<a href="/" class="touch-btn" onclick={handleQuit}>Quit</a>
 		</div>
 	{/if}
 
@@ -437,8 +469,10 @@
 		<div class="overlay">
 			<div class="panel">
 				<div class="buttons">
-					<button onclick={restartGame}>Restart</button>
-					<a href="/" class="button">Quit</a>
+					{#if !relayToLocal}
+						<button onclick={restartGame}>Restart</button>
+					{/if}
+					<a href="/" class="button" onclick={handleQuit}>Quit</a>
 				</div>
 			</div>
 		</div>
@@ -470,8 +504,10 @@
 							>Mouse Control</button
 						>
 						<button onclick={toggleMute}>{muted ? 'Unmute' : 'Mute'}</button>
-						<button onclick={restartGame}>Restart</button>
-						<a href="/" class="button">Quit</a>
+						{#if !relayToLocal}
+							<button onclick={restartGame}>Restart</button>
+						{/if}
+						<a href="/" class="button" onclick={handleQuit}>Quit</a>
 					</div>
 				</div>
 			</div>
@@ -668,7 +704,7 @@
 		text-align: center;
 		writing-mode: vertical-lr;
 		transform: rotate(180deg);
-		font-size: 7px;
+		font-size: 11px;
 		font-weight: 600;
 		letter-spacing: 0.04em;
 		color: rgba(255, 255, 255, 0.88);
@@ -683,7 +719,7 @@
 	}
 
 	.player-health .bar-name {
-		font-size: 10px;
+		font-size: 14px;
 	}
 
 	.player-left-notif {

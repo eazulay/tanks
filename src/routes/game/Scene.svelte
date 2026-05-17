@@ -2,13 +2,15 @@
 	import * as THREE from 'three';
 	import { T, useThrelte } from '@threlte/core';
 	import { useThrelteAudio } from '@threlte/extras';
-	import { setContext, onDestroy, untrack } from 'svelte';
+	import { browser } from '$app/environment';
+	import { setContext, onMount, onDestroy, untrack } from 'svelte';
 	import Tank from '$lib/Tank.svelte';
 	import Shell from '$lib/Shell.svelte';
 	import Explosion from '$lib/Explosion.svelte';
 	import Tree from '$lib/Tree.svelte';
-	import type { TankBody, TankHealthEntry, TreeVol, TreeTrunk, ShellFollow } from '$lib/types';
+	import type { TankBody, TankHealthEntry, TankSnapshot, TreeVol, TreeTrunk, ShellFollow } from '$lib/types';
 	import { mulberry32 } from '$lib/rand';
+	import { mp, send, TANK_STATE_HZ, setGameHandlers } from '$lib/mp.svelte.js';
 
 	let {
 		opponentCount = 1,
@@ -18,7 +20,10 @@
 		muted = false,
 		seed = null as number | null,
 		tankNames = [] as string[],
-		tankColors = [] as string[]
+		tankColors = [] as string[],
+		isHost = true,
+		selfRelayIndex = 0,
+		relayToLocal = null as Map<number, number> | null
 	}: {
 		opponentCount?: number;
 		tankHealthData?: TankHealthEntry[];
@@ -28,6 +33,9 @@
 		seed?: number | null;
 		tankNames?: string[];
 		tankColors?: string[];
+		isHost?: boolean;
+		selfRelayIndex?: number;
+		relayToLocal?: Map<number, number> | null;
 	} = $props();
 
 	// Unique audio listener ID per Scene instance — prevents Threlte's addAudioListener guard from
@@ -315,13 +323,116 @@
 	const tankBodies: TankBody[] = [];
 	setContext('tankBodies', tankBodies);
 
+	// Non-reactive map: localIndex → latest received TankSnapshot.
+	// Tank.svelte reads this each frame in remote mode; Scene updates it from network messages.
+	const remoteStateMap = new Map<number, TankSnapshot>();
+	setContext('remoteStateMap', remoteStateMap);
+
+	// Phantom bodies for guest tanks (host only): keep their positions in tankBodies so shells
+	// can detect hits against them. Keyed by relay tankIndex.
+	const phantomBodies = new Map<number, TankBody>();
+
 	// Shell position tracker — Shell writes its live position here; Tank camera reads it when zoomed.
 	// Scene nulls it out and dispatches 'shell-sequence-done' when the full sequence ends.
 	const shellFollow: ShellFollow = { pos: null };
 	setContext('shellFollow', shellFollow);
 	let trackedExplosionId: number | null = null;
 
+	// Shell sequence counter — each client gives its own shells a unique ID by offsetting from
+	// selfRelayIndex * 100000, so host and guest IDs can't collide.
+	const _selfRelayIndex = untrack(() => selfRelayIndex);
+	let _isHost = untrack(() => isHost);
+	const _passedRelayToLocal = untrack(() => relayToLocal);
+	const _isMultiplayer = _passedRelayToLocal !== null;
+	// Stable self-client ID for host-migration comparison (only meaningful in multiplayer)
+	const _selfClientId = _isMultiplayer ? (untrack(() => mp.clientId) ?? '') : '';
+
+	// Build full relay↔local maps covering all tanks (humans AND AI).
+	// Human player mappings come from the prop; AI tanks fill remaining relay indices in order,
+	// matching the iteration order in +page.svelte's buildGameSetup() so all machines agree.
+	const fullRelayToLocal = new Map<number, number>();
+	const fullLocalToRelay = new Map<number, number>();
+	if (_passedRelayToLocal) {
+		for (const [ri, li] of _passedRelayToLocal.entries()) {
+			fullRelayToLocal.set(ri, li);
+			fullLocalToRelay.set(li, ri);
+		}
+		let nextLI = 1;
+		for (let ri = 0; ri < TANK_COUNT; ri++) {
+			if (fullRelayToLocal.has(ri)) continue;
+			while (fullLocalToRelay.has(nextLI)) nextLI++;
+			fullRelayToLocal.set(ri, nextLI);
+			fullLocalToRelay.set(nextLI, ri);
+			nextLI++;
+		}
+	}
+
+	let nextShellId = _selfRelayIndex * 100000;
+
 	const CRATER_DEPTH = 0.75;
+	// Terrain save/restore — keyed by game seed so reloading the same game recovers the state.
+	// Only height and colour changes are tracked (colour only changes on craters).
+	const TERRAIN_SAVE_KEY = `terrain_${gameSeed}`;
+	const TERRAIN_SAVE_INTERVAL = 8000; // ms between localStorage writes
+	const TERRAIN_MAX_AGE = 6 * 60 * 60 * 1000; // 6 hours — older saves are pruned on game start
+	// Set of vertex indices that differ from the seeded initial state
+	const dirtyVertices = new Set<number>();
+
+	function saveTerrainState() {
+		if (!browser || dirtyVertices.size === 0) return;
+		const colAttr = terrainGeo.attributes.color as THREE.BufferAttribute;
+		const entries: [number, number, number, number, number][] = [];
+		for (const i of dirtyVertices) {
+			entries.push([i, heights[i], colAttr.getX(i), colAttr.getY(i), colAttr.getZ(i)]);
+		}
+		try {
+			localStorage.setItem(TERRAIN_SAVE_KEY, JSON.stringify({ ts: Date.now(), vertices: entries }));
+		} catch {
+			// Storage quota exceeded — ignore
+		}
+	}
+
+	function restoreTerrainState() {
+		if (!browser) return;
+		try {
+			const raw = localStorage.getItem(TERRAIN_SAVE_KEY);
+			if (!raw) return;
+			const parsed = JSON.parse(raw) as { ts: number; vertices: [number, number, number, number, number][] };
+			const posAttr = terrainGeo.attributes.position as THREE.BufferAttribute;
+			const colAttr = terrainGeo.attributes.color as THREE.BufferAttribute;
+			for (const [i, h, r, g, b] of parsed.vertices) {
+				if (i < 0 || i >= posAttr.count) continue;
+				heights[i] = h;
+				posAttr.setY(i, h);
+				colAttr.setXYZ(i, r, g, b);
+				dirtyVertices.add(i);
+			}
+			posAttr.needsUpdate = true;
+			colAttr.needsUpdate = true;
+			terrainGeo.computeVertexNormals();
+		} catch {
+			// Malformed save data — ignore
+		}
+	}
+
+	// Remove terrain saves for other seeds that are older than TERRAIN_MAX_AGE.
+	// Never removes the current seed's entry — that belongs to this game.
+	function pruneOldTerrainSaves() {
+		if (!browser) return;
+		const cutoff = Date.now() - TERRAIN_MAX_AGE;
+		const toRemove: string[] = [];
+		for (let i = 0; i < localStorage.length; i++) {
+			const key = localStorage.key(i);
+			if (!key || !key.startsWith('terrain_') || key === TERRAIN_SAVE_KEY) continue;
+			try {
+				const parsed = JSON.parse(localStorage.getItem(key) ?? '{}') as { ts?: number };
+				if (!parsed.ts || parsed.ts < cutoff) toRemove.push(key);
+			} catch {
+				toRemove.push(key); // unparseable — remove it
+			}
+		}
+		for (const key of toRemove) localStorage.removeItem(key);
+	}
 
 	function updateSheetPositions() {
 		for (const s of landedSheets) {
@@ -342,6 +453,7 @@
 		colAttr.setXYZ(i, 0.08, 0.06, 0.05);
 		posAttr.needsUpdate = true;
 		colAttr.needsUpdate = true;
+		dirtyVertices.add(i);
 		terrainGeo.computeVertexNormals();
 		updateSheetPositions();
 	}
@@ -356,6 +468,7 @@
 		heights[i] += amount;
 		posAttr.setY(i, heights[i]);
 		posAttr.needsUpdate = true;
+		dirtyVertices.add(i);
 		terrainGeo.computeVertexNormals();
 		updateSheetPositions();
 	}
@@ -380,9 +493,10 @@
 		velocity: THREE.Vector3;
 		tracked: boolean; // true only for the player-controlled tank's shells
 		firingBodyUid: number; // UID of firing tank body — compared with body.uid (not a reference, avoids Svelte proxy identity issues)
+		isHost: boolean; // false for visual-only shells received from network
+		aiDetectorOnly?: boolean; // host-side physics copy of a guest shell — only detects AI hits, sends no relay messages
 	}
 	let shells = $state<ShellInstance[]>([]);
-	let nextShellId = 0;
 
 	function handlePlayerFire(
 		position: THREE.Vector3,
@@ -390,8 +504,18 @@
 		firingBodyUid: number
 	) {
 		const id = nextShellId++;
-		shells.push({ id, position, velocity, tracked: true, firingBodyUid });
+		shells.push({ id, position, velocity, tracked: true, firingBodyUid, isHost: true });
 		trackedExplosionId = null;
+		if (_isMultiplayer) {
+			send({
+				type: 'shell_fired',
+				shellId: id,
+				x: position.x, y: position.y, z: position.z,
+				vx: velocity.x, vy: velocity.y, vz: velocity.z,
+				tracked: false, // not tracked on other clients
+				firingBodyUid
+			});
+		}
 	}
 
 	function handleOpponentFire(
@@ -399,12 +523,63 @@
 		velocity: THREE.Vector3,
 		firingBodyUid: number
 	) {
-		shells.push({ id: nextShellId++, position, velocity, tracked: false, firingBodyUid });
+		const id = nextShellId++;
+		shells.push({ id, position, velocity, tracked: false, firingBodyUid, isHost: true });
+		if (_isMultiplayer && _isHost) {
+			send({
+				type: 'shell_fired',
+				shellId: id,
+				x: position.x, y: position.y, z: position.z,
+				vx: velocity.x, vy: velocity.y, vz: velocity.z,
+				tracked: false, firingBodyUid
+			});
+		}
+	}
+
+	// Shell hit a tank — decide locally vs relay depending on who owns the hit tank.
+	// Called for shells with isHost=true (own shells, AI shells, host's aiDetectorOnly copies excluded).
+	// Routes the hit: human remote player → relay; AI on this host → direct; AI on non-host → drop
+	// (the host's aiDetectorOnly physics copy of the same shell handles it directly).
+	function handleShellTankHit(bodyUid: number, dist: number, wx: number, wz: number) {
+		const body = tankBodies.find((b) => b.uid === bodyUid);
+		if (!body) return;
+		if (_isMultiplayer && body.relayIndex >= 0 && body.relayIndex !== _selfRelayIndex) {
+			const isHuman = _passedRelayToLocal?.has(body.relayIndex) ?? false;
+			if (isHuman) {
+				// Remote human player — relay so they apply damage locally
+				send({ type: 'tank_hit', tankIndex: body.relayIndex, hitDist: dist, wx, wz });
+			} else if (_isHost) {
+				// AI tank, we are host — apply directly
+				body.lastHit = { dist, wx, wz };
+			}
+			// Non-host hitting AI: drop — the host's aiDetectorOnly copy of this shell handles it
+		} else {
+			// Own tank (self-hit after grace) → write directly
+			body.lastHit = { dist, wx, wz };
+		}
+	}
+
+	// Called only for the host's aiDetectorOnly copies of guest shells.
+	// Detects AI hits without relay; human tanks are intentionally skipped
+	// (the guest's own shell handles those via tank_hit).
+	function handleAiOnlyTankHit(bodyUid: number, dist: number, wx: number, wz: number) {
+		const body = tankBodies.find((b) => b.uid === bodyUid);
+		if (!body || body.hitAt !== null || body.lastHit !== null) return;
+		if (_passedRelayToLocal?.has(body.relayIndex)) return; // human — guest handles
+		if (body.relayIndex === _selfRelayIndex) return; // own tank
+		body.lastHit = { dist, wx, wz };
 	}
 
 	function removeShell(id: number) {
-		const wasTracked = shells.find((s) => s.id === id)?.tracked ?? false;
+		const shell = shells.find((s) => s.id === id);
+		const wasTracked = shell?.tracked ?? false;
+		// aiDetectorOnly shells are the host's private physics copies — they never send relay messages
+		const wasLocalShell = (shell?.isHost ?? false) && !(shell?.aiDetectorOnly ?? false);
 		shells = shells.filter((s) => s.id !== id);
+		// Broadcast removal so other clients unmount their visual copy
+		if (_isMultiplayer && wasLocalShell) {
+			send({ type: 'shell_removed', shellId: id });
+		}
 		// OOB exit: shell left bounds with no explosion — end sequence now
 		if (wasTracked && trackedExplosionId === null) {
 			shellFollow.pos = null;
@@ -452,24 +627,41 @@
 	function handleImpact(position: THREE.Vector3, tracked: boolean) {
 		deformTerrain(position.x, position.z);
 		const now = Date.now();
+		const ignitedTreeIds: number[] = [];
 		for (const t of trees) {
 			if (t.burntAt != null) continue;
 			const dx = t.x - position.x;
 			const dz = t.z - position.z;
-			if (dx * dx + dz * dz < IGNITION_RADIUS * IGNITION_RADIUS) t.burntAt = now;
+			if (dx * dx + dz * dz < IGNITION_RADIUS * IGNITION_RADIUS) {
+				t.burntAt = now;
+				ignitedTreeIds.push(t.id);
+			}
 		}
-		// Splash damage — tanks close to the impact point catch a brief fire
+		// Splash damage
 		for (const body of tankBodies) {
-			if (body.hitAt !== null) continue; // destroyed
-			if (body.lastHit !== null) continue; // direct hit already pending — don't overwrite
+			if (body.hitAt !== null) continue;
+			if (body.lastHit !== null) continue;
 			const dx = body.x - position.x;
 			const dz = body.z - position.z;
 			if (dx * dx + dz * dz < SPLASH_RADIUS * SPLASH_RADIUS) {
-				body.lastHit = { dist: 0, wx: position.x, wz: position.z, splash: true };
+				if (_isMultiplayer && body.relayIndex >= 0 && body.relayIndex !== _selfRelayIndex) {
+					const isHuman = _passedRelayToLocal?.has(body.relayIndex) ?? false;
+					if (!isHuman && _isHost) {
+						body.lastHit = { dist: 0, wx: position.x, wz: position.z, splash: true };
+					} else {
+						send({ type: 'tank_hit', tankIndex: body.relayIndex, hitDist: 0, wx: position.x, wz: position.z, splash: true });
+					}
+				} else {
+					body.lastHit = { dist: 0, wx: position.x, wz: position.z, splash: true };
+				}
 			}
 		}
 		const id = nextExplodeId++;
 		explosions.push({ id, position, tankExplosion: false });
+		if (_isMultiplayer) {
+			send({ type: 'explosion', x: position.x, y: position.y, z: position.z, tankExplosion: false, color: '' });
+			for (const tid of ignitedTreeIds) send({ type: 'tree_ignited', treeId: tid });
+		}
 		if (tracked) {
 			trackedExplosionId = id;
 			shellFollow.pos = position.clone();
@@ -488,19 +680,30 @@
 	function handleTankExplosion(position: THREE.Vector3, color: string) {
 		deformTerrain(position.x, position.z);
 		const now = Date.now();
+		const ignitedTreeIds: number[] = [];
 		for (const t of trees) {
 			if (t.burntAt != null) continue;
 			const dx = t.x - position.x;
 			const dz = t.z - position.z;
-			if (dx * dx + dz * dz < IGNITION_RADIUS * IGNITION_RADIUS) t.burntAt = now;
+			if (dx * dx + dz * dz < IGNITION_RADIUS * IGNITION_RADIUS) {
+				t.burntAt = now;
+				ignitedTreeIds.push(t.id);
+			}
 		}
 		explosions.push({ id: nextExplodeId++, position, tankExplosion: true, color });
+		if (_isMultiplayer) {
+			send({ type: 'explosion', x: position.x, y: position.y, z: position.z, tankExplosion: true, color });
+			for (const tid of ignitedTreeIds) send({ type: 'tree_ignited', treeId: tid });
+		}
 	}
 
 	let spawnPositions = $state<{ x: number; z: number; heading: number }[]>([]);
-	let tankRef: { reset: (sx: number, sz: number, sh: number) => void } | undefined;
+	let tankRef: { reset: (sx: number, sz: number, sh: number) => void; getState: (ri: number) => TankSnapshot } | undefined;
+	// Opponent tank refs — used by host to read AI state for network broadcast
+	const opponentTankRefs: Array<{ getState: (ri: number) => TankSnapshot } | undefined> = [];
 
 	function initGame() {
+		pruneOldTerrainSaves();
 		// Compute spawn positions first so tree generation can avoid them.
 		// Tanks sit on a circle at SPAWN_RADIUS, evenly spaced, with a random base
 		// rotation each game for variety. Each position has up to 10% radial jitter.
@@ -556,6 +759,9 @@
 		}
 		terrainGeo.setAttribute('color', new THREE.BufferAttribute(colorsArr, 3));
 		prevGeo?.dispose();
+		dirtyVertices.clear();
+		// Restore terrain modifications from a previous session with the same seed
+		restoreTerrainState();
 
 		// Place trees in green zone (height 5–23, gentle slope, away from spawn)
 		const newTrees: TreeSpec[] = [];
@@ -615,10 +821,146 @@
 		shells = [];
 		explosions = [];
 		landedSheets = [];
-		tankRef?.reset(newSpawns[0].x, newSpawns[0].z, newSpawns[0].heading);
+		const playerSpawn = newSpawns[_selfRelayIndex] ?? newSpawns[0];
+		tankRef?.reset(playerSpawn.x, playerSpawn.z, playerSpawn.heading);
 	}
 
 	initGame();
+
+	let stateInterval: ReturnType<typeof setInterval> | null = null;
+	let saveInterval: ReturnType<typeof setInterval> | null = null;
+
+	onMount(() => {
+		// Periodically persist any terrain modifications to localStorage
+		saveInterval = setInterval(saveTerrainState, TERRAIN_SAVE_INTERVAL);
+
+		if (!_isMultiplayer) return;
+
+		setGameHandlers({
+			onTankState(snapshot) {
+				// Ignore own state — we are the source of truth for our own tank
+				if (snapshot.index === _selfRelayIndex) return;
+				const localIdx = fullRelayToLocal.get(snapshot.index);
+				if (localIdx === undefined) return;
+				remoteStateMap.set(localIdx, snapshot);
+				// Host: maintain phantom body so shell hit detection covers guest positions
+				if (_isHost) {
+					let pb = phantomBodies.get(snapshot.index);
+					if (!pb) {
+						pb = {
+							uid: snapshot.index, // unique enough — relay indices are small integers
+							relayIndex: snapshot.index,
+							x: snapshot.x,
+							y: snapshot.y,
+							z: snapshot.z,
+							pushVx: 0,
+							pushVz: 0,
+							hitAt: snapshot.destroyed ? Date.now() : null,
+							lastHit: null,
+							lastShellImpact: null
+						};
+						phantomBodies.set(snapshot.index, pb);
+						tankBodies.push(pb);
+					} else {
+						pb.x = snapshot.x;
+						pb.y = snapshot.y;
+						pb.z = snapshot.z;
+						if (snapshot.destroyed && pb.hitAt === null) pb.hitAt = Date.now();
+					}
+				}
+			},
+			onTankHit(tankIndex, hitDist, wx, wz, splash) {
+				// Direct shell hits on AI are handled by the host's aiDetectorOnly physics copies.
+				// This handler only needs to act when this client's own tank is hit.
+				if (tankIndex !== _selfRelayIndex) return;
+				const body = tankBodies.find((b) => b.relayIndex === _selfRelayIndex);
+				if (body && body.hitAt === null && body.lastHit === null)
+					body.lastHit = { dist: hitDist, wx, wz, splash };
+			},
+			onShellFired(shellId, x, y, z, vx, vy, vz, firingBodyUid) {
+				// Host creates a physics copy (aiDetectorOnly) to detect AI hits without relay.
+				// Non-host clients get a visual-only shell (isHost=false).
+				shells.push({
+					id: shellId,
+					position: new THREE.Vector3(x, y, z),
+					velocity: new THREE.Vector3(vx, vy, vz),
+					tracked: false,
+					firingBodyUid: firingBodyUid ?? -1,
+					isHost: _isHost,
+					aiDetectorOnly: _isHost
+				});
+			},
+			onShellRemoved(shellId) {
+				removeShell(shellId);
+			},
+			onExplosion(x, y, z, tankExplosion, color) {
+				// Deform terrain locally to keep it in sync with the sender's world
+				deformTerrain(x, z);
+				explosions.push({
+					id: nextExplodeId++,
+					position: new THREE.Vector3(x, y, z),
+					tankExplosion,
+					color: color || undefined
+				});
+			},
+			onTreeIgnited(treeId) {
+				const tree = trees.find((t) => t.id === treeId);
+				if (tree && tree.burntAt === null) tree.burntAt = Date.now();
+			},
+			onGameOver() {
+				// Tank state updates will drive tankHealthData naturally; nothing extra needed here.
+			},
+			onTransferHost(newHostClientId: string) {
+				if (newHostClientId !== _selfClientId) return;
+				_isHost = true;
+				// Release AI tanks from remote mode so their useTask runs local AI physics.
+				// Human player entries stay in remoteStateMap — we still interpolate their positions.
+				for (const [ri, li] of fullRelayToLocal.entries()) {
+					if (_passedRelayToLocal?.has(ri)) continue; // human player — keep remote mode
+					remoteStateMap.delete(li);
+				}
+			}
+		});
+
+		// Broadcast own tank state at TANK_STATE_HZ; host additionally broadcasts AI states
+		stateInterval = setInterval(() => {
+			if (!tankRef) return;
+			const state = tankRef.getState(_selfRelayIndex);
+			send({ type: 'tank_state', ...state });
+
+			if (_isHost) {
+				for (let i = 0; i < opponentTankRefs.length; i++) {
+					const ref = opponentTankRefs[i];
+					if (!ref) continue;
+					const localIdx = i + 1;
+					const ri = fullLocalToRelay.get(localIdx);
+					if (ri === undefined) continue;
+					// Only broadcast tanks not covered by a remote player (i.e. AI tanks)
+					if (_passedRelayToLocal && _passedRelayToLocal.has(ri)) continue;
+					const aiState = ref.getState(ri);
+					send({ type: 'tank_state', ...aiState });
+				}
+			}
+		}, 1000 / TANK_STATE_HZ);
+	});
+
+	let _quitting = false;
+
+	// Called by the Quit button before navigation — signals onDestroy to remove rather than save.
+	export function quitGame() {
+		_quitting = true;
+	}
+
+	onDestroy(() => {
+		setGameHandlers(null);
+		if (stateInterval !== null) clearInterval(stateInterval);
+		if (saveInterval !== null) clearInterval(saveInterval);
+		if (_quitting) {
+			localStorage.removeItem(TERRAIN_SAVE_KEY);
+		} else {
+			saveTerrainState(); // reload path — preserve crater state
+		}
+	});
 </script>
 
 <T.Mesh geometry={terrainGeo} receiveShadow castShadow>
@@ -655,9 +997,11 @@
 	chaseCamera
 	{gameOver}
 	tankColor={tankColors[0] ?? TANK_COLORS[0]}
-	spawnX={spawnPositions[0]?.x ?? 0}
-	spawnZ={spawnPositions[0]?.z ?? 0}
-	spawnHeading={spawnPositions[0]?.heading ?? 0}
+	localIndex={0}
+	relayIndex={_selfRelayIndex}
+	spawnX={spawnPositions[_selfRelayIndex]?.x ?? 0}
+	spawnZ={spawnPositions[_selfRelayIndex]?.z ?? 0}
+	spawnHeading={spawnPositions[_selfRelayIndex]?.heading ?? 0}
 	bind:this={tankRef}
 	onfire={handlePlayerFire}
 	onexplode={handleTankExplosion}
@@ -666,19 +1010,23 @@
 	}}
 />
 
-{#each spawnPositions.slice(1) as sp, i (i)}
+{#each Array.from({ length: TANK_COUNT - 1 }, (_, i) => i + 1) as localIdx (localIdx)}
+	{@const ri = fullLocalToRelay.get(localIdx)}
+	{@const sp = ri !== undefined ? spawnPositions[ri] : spawnPositions[localIdx]}
 	<Tank
-		tankColor={tankColors[i + 1] ?? TANK_COLORS[i + 1] ?? TANK_COLORS[TANK_COLORS.length - 1]}
-		spawnX={sp.x}
-		spawnZ={sp.z}
-		spawnHeading={sp.heading}
+		tankColor={tankColors[localIdx] ?? TANK_COLORS[localIdx] ?? TANK_COLORS[TANK_COLORS.length - 1]}
+		localIndex={localIdx}
+		relayIndex={ri ?? -1}
+		spawnX={sp?.x ?? 0}
+		spawnZ={sp?.z ?? 0}
+		spawnHeading={sp?.heading ?? 0}
 		gameOver={allGameOver}
 		onfire={handleOpponentFire}
 		onexplode={handleTankExplosion}
 		onhealthchange={(h, d) => {
-			const idx = i + 1;
-			if (tankHealthData[idx]) { tankHealthData[idx].health = h; tankHealthData[idx].destroyed = d; }
+			if (tankHealthData[localIdx]) { tankHealthData[localIdx].health = h; tankHealthData[localIdx].destroyed = d; }
 		}}
+		bind:this={opponentTankRefs[localIdx - 1]}
 	/>
 {/each}
 
@@ -688,8 +1036,12 @@
 		velocity={s.velocity}
 		excludeBodyUid={s.firingBodyUid}
 		tracked={s.tracked}
+		isHost={s.isHost}
 		onremove={() => removeShell(s.id)}
-		onimpact={(pos) => handleImpact(pos, s.tracked)}
+		onimpact={s.isHost && !s.aiDetectorOnly ? (pos) => handleImpact(pos, s.tracked) : undefined}
+		ontankhit={s.isHost && _isMultiplayer
+			? (s.aiDetectorOnly ? handleAiOnlyTankHit : handleShellTankHit)
+			: undefined}
 	/>
 {/each}
 

@@ -11,15 +11,21 @@
 		velocity,
 		excludeBodyUid = undefined,
 		tracked = false,
+		isHost = true,
 		onremove,
-		onimpact
+		onimpact,
+		ontankhit = undefined as
+			| ((bodyUid: number, dist: number, wx: number, wz: number) => void)
+			| undefined
 	}: {
 		position: THREE.Vector3;
 		velocity: THREE.Vector3;
 		excludeBodyUid?: number;
 		tracked?: boolean;
+		isHost?: boolean;
 		onremove?: () => void;
 		onimpact?: (position: THREE.Vector3) => void;
+		ontankhit?: (bodyUid: number, dist: number, wx: number, wz: number) => void;
 	} = $props();
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
@@ -85,11 +91,19 @@
 	}
 	const pendingHits: PendingHit[] = [];
 
+	function registerHit(body: TankBody, dist: number, wx: number, wz: number): void {
+		if (ontankhit) {
+			ontankhit(body.uid, dist, wx, wz);
+		} else {
+			body.lastHit = { dist, wx, wz };
+		}
+	}
+
 	function flushPendingHit(): boolean {
 		for (let i = 0; i < pendingHits.length; i++) {
 			const p = pendingHits[i];
 			if (p.body.hitAt === null) {
-				p.body.lastHit = { dist: p.minDist, wx: p.minWx, wz: p.minWz };
+				registerHit(p.body, p.minDist, p.minWx, p.minWz);
 				pendingHits.splice(i, 1);
 				onimpact?.(pos.clone());
 				done = true;
@@ -124,10 +138,11 @@
 	}
 
 	useTask((delta) => {
-		// Shell hit terrain — keep task alive until splashes finish, then remove
+		// Shell hit terrain — keep task alive until splashes finish (host shells: then remove).
+		// Visual shells (isHost=false) wait to be unmounted by Scene on shell_removed from host.
 		if (done) {
 			whistleRef?.stop();
-			if (splashes.length === 0) onremove?.();
+			if (isHost && splashes.length === 0) onremove?.();
 			return;
 		}
 
@@ -145,8 +160,13 @@
 		pos.y += vel.y * delta;
 		pos.z += vel.z * delta;
 
-		// Out-of-bounds shells have no terrain-impact detection, so clean up by Y drop
+		// Out-of-bounds: visual shells just hide; host shells flush pending hit and remove.
 		if (!isInBounds(pos.x, pos.z) && pos.y < position.y - 15) {
+			if (!isHost) {
+				done = true;
+				if (groupRef) groupRef.visible = false;
+				return;
+			}
 			if (flushPendingHit()) return;
 			onremove?.();
 			return;
@@ -159,10 +179,10 @@
 			groupRef.quaternion.copy(_q);
 		}
 
-		// Tank hit detection — closest-approach tracking.
+		// Tank hit detection — host only; closest-approach tracking.
 		// Declaring on first cylinder entry always records dist ≈ HIT_RADIUS (boundary), so instead
 		// we track minDist while inside and declare only when the shell starts moving away or exits.
-		if (tankBodies) {
+		if (isHost && tankBodies) {
 			// Advance existing pending approaches
 			for (let i = pendingHits.length - 1; i >= 0; i--) {
 				const p = pendingHits[i];
@@ -180,7 +200,7 @@
 					p.minWz = pos.z;
 				} else {
 					// Moving away or exited — closest point reached, register hit
-					p.body.lastHit = { dist: p.minDist, wx: p.minWx, wz: p.minWz };
+					registerHit(p.body, p.minDist, p.minWx, p.minWz);
 					pendingHits.splice(i, 1);
 					onimpact?.(new THREE.Vector3(p.minWx, pos.y, p.minWz));
 					done = true;
@@ -232,10 +252,13 @@
 
 			const groundY = getTerrainHeight(pos.x, pos.z);
 			if (pos.y <= groundY) {
-				// If already inside a tank's cylinder, register a tank hit instead of a terrain explosion
-				if (flushPendingHit()) return;
-				recordImpact();
-				onimpact?.(pos.clone());
+				if (isHost) {
+					// If already inside a tank's cylinder, register a tank hit instead of a terrain explosion
+					if (flushPendingHit()) return;
+					recordImpact();
+					onimpact?.(pos.clone());
+				}
+				// Visual shells (isHost=false): just stop visually; wait for shell_removed from host
 				done = true;
 				if (groupRef) groupRef.visible = false;
 				return;

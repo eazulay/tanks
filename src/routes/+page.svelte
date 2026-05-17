@@ -1,6 +1,7 @@
 <script>
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { updateName } from '$lib/mp.svelte.js';
 
 	let playerName = $state('');
 	let _ready = false;
@@ -11,7 +12,10 @@
 	});
 
 	$effect(() => {
-		if (_ready) localStorage.setItem('playerName', playerName);
+		if (_ready) {
+			localStorage.setItem('playerName', playerName);
+			updateName(playerName);
+		}
 	});
 
 	const canMulti = $derived(playerName.trim().length > 0);

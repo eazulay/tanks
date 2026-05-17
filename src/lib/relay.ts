@@ -189,9 +189,17 @@ function removeFromRoom(clientId: string): void {
 
 	if (room.gameStarted) {
 		if (room.hostClientId === clientId) {
-			// Host disconnect: tear down the game for everyone
-			broadcastRoom(roomId, { type: 'game_over' });
-			dissolveRoom(roomId);
+			// Host disconnect: elect the first remaining connected client as new host
+			const newHostId = room.playerIds.find((id) => {
+				const c = clients.get(id);
+				return c != null && c.ws.readyState === 1; // WebSocket.OPEN
+			});
+			if (newHostId) {
+				room.hostClientId = newHostId;
+				broadcastRoom(roomId, { type: 'transfer_host', newHostClientId: newHostId });
+			} else {
+				dissolveRoom(roomId);
+			}
 		} else {
 			// Non-host disconnect: notify remaining players so they can update their HUD
 			broadcastRoom(roomId, { type: 'player_left', clientId, name: client.name });
@@ -329,7 +337,7 @@ function handleCreateRoom(clientId: string): void {
 		playerIds: [clientId],
 		hostClientId: null,
 		colors: new Map([[clientId, 0]]),
-		aiCount: 1,
+		aiCount: 0,
 		manuallyLocked: false,
 		locked: false,
 		pendingJoins: new Map(),
@@ -502,7 +510,7 @@ function handleClickCancel(clientId: string): void {
 // In-game message forwarding
 // ---------------------------------------------------------------------------
 
-/** Host → relay → all guests (game_state, shell events, explosions, game_over). */
+/** Host → relay → all players (tank_hit, shell events, explosions, game_over). */
 function forwardToGuests(senderId: string, msg: ClientMessage): void {
 	const client = clients.get(senderId);
 	if (!client?.roomId) return;
@@ -514,13 +522,14 @@ function forwardToGuests(senderId: string, msg: ClientMessage): void {
 	if (msg.type === 'game_over') dissolveRoom(client.roomId);
 }
 
-/** Guest → relay → host (player_input), with clientId attached so host can identify the sender. */
-function forwardToHost(senderId: string, msg: ClientMessage & { type: 'player_input' }): void {
+/** Any player → relay → all other players. */
+function forwardToAll(senderId: string, msg: ClientMessage): void {
 	const client = clients.get(senderId);
 	if (!client?.roomId) return;
 	const room = rooms.get(client.roomId);
-	if (!room?.hostClientId || room.hostClientId === senderId) return;
-	sendTo(room.hostClientId, { ...msg, clientId: senderId });
+	if (!room?.gameStarted) return;
+	broadcastRoom(client.roomId, msg as unknown as ServerMessage, senderId);
+	if (msg.type === 'game_over') dissolveRoom(client.roomId);
 }
 
 // ---------------------------------------------------------------------------
@@ -544,13 +553,13 @@ function handleMessage(clientId: string, raw: string): void {
 		case 'set_color':     return handleSetColor(clientId, msg.colorIndex);
 		case 'click_start':   return handleClickStart(clientId);
 		case 'click_cancel':  return handleClickCancel(clientId);
-		case 'player_input':  return forwardToHost(clientId, msg);
-		case 'game_state':
+		case 'tank_state':
 		case 'shell_fired':
+		case 'tank_hit':
 		case 'shell_removed':
 		case 'explosion':
 		case 'tree_ignited':
-		case 'game_over':     return forwardToGuests(clientId, msg);
+		case 'game_over':     return forwardToAll(clientId, msg);
 		// ServerMessage variants arriving from the wire are silently ignored
 	}
 }

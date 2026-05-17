@@ -14,7 +14,8 @@
       "Bash(npm show *)",
       "Bash(Select-String -Path \"C:\\\\node\\\\tanks\\\\src\\\\lib\\\\Tank.svelte\" -Pattern \"AudioListener|PositionalAudio|chaseCamera|tankDestroyed|{#if|{/if\")",
       "Bash(Select-Object LineNumber, Line)",
-      "Bash(Format-Table -Wrap)"
+      "Bash(Format-Table -Wrap)",
+      "Bash(npx tsc *)"
     ]
   }
 }

@@ -6,7 +6,7 @@
 	import type { Object3D } from 'three';
 	import Splash from './Splash.svelte';
 	import Flames from './Flames.svelte';
-	import type { TankBody, TreeTrunk, ShellFollow } from './types';
+	import type { TankBody, TankSnapshot, TreeTrunk, ShellFollow } from './types';
 	import { unlockedCtx } from './audioUnlock';
 
 	let {
@@ -17,6 +17,8 @@
 		spawnZ = 0,
 		spawnHeading = 0,
 		tankColor = '#CBFF70',
+		localIndex = 0, // local slot in Scene's tank layout (0 = player, 1+ = opponents)
+		relayIndex = -1, // relay tankIndex (-1 = AI or single-player)
 		onfire = undefined as
 			| ((position: THREE.Vector3, velocity: THREE.Vector3, firingBodyUid: number) => void)
 			| undefined,
@@ -29,11 +31,22 @@
 	const _spawnZ = untrack(() => spawnZ);
 	const _tankColor = untrack(() => tankColor);
 	const _spawnHeading = untrack(() => spawnHeading);
+	const _localIndex = untrack(() => localIndex);
+	const _relayIndex = untrack(() => relayIndex);
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const treeTrunks = getContext<TreeTrunk[]>('treeTrunks');
 	const tankBodies = getContext<TankBody[]>('tankBodies');
 	const shellFollow = getContext<ShellFollow>('shellFollow');
+	// Non-reactive map provided by Scene in multiplayer: localIndex → latest received TankSnapshot.
+	// Tanks with an entry here are driven by remote state instead of local physics or AI.
+	const remoteStateMap = getContext<Map<number, TankSnapshot>>('remoteStateMap') ?? null;
+	// Dead-reckoning state for remote tanks — plain lets, not reactive
+	let drX = NaN;
+	let drZ = NaN;
+	let drLastSnapX = NaN;
+	let drLastSnapZ = NaN;
+	let drStopped = false;
 	const audioId = getContext<string>('audioId') ?? 'default';
 	const ENGINE_VOLUME = _controlled ? 0.6 : 1.5;
 	const ENGINE_IDLE_TIMEOUT = 1.0; // seconds stationary before engine fades out
@@ -45,16 +58,17 @@
 
 	// Register this tank's body; other tanks write impulses here, we apply + decay them each frame.
 	// hitAt is written by Shell when a shell strikes us, triggering the fire+explosion sequence.
-	const ownBody = {
+	const ownBody: TankBody = {
 		uid: Math.floor(Math.random() * 0xffffffff),
+		relayIndex: _relayIndex,
 		x: _spawnX,
 		y: 0,
 		z: _spawnZ,
 		pushVx: 0,
 		pushVz: 0,
-		hitAt: null as number | null,
-		lastHit: null as { dist: number; wx: number; wz: number; splash?: boolean } | null,
-		lastShellImpact: null as { x: number; z: number } | null
+		hitAt: null,
+		lastHit: null,
+		lastShellImpact: null
 	};
 	tankBodies?.push(ownBody);
 
@@ -143,7 +157,7 @@
 	const EDGE_BURN_DURATION = 0.7; // seconds of fire for an edge hit
 	const HIT_RADIUS = 2.5; // must match Shell.svelte
 	const SPLASH_DAMAGE = 8; // HP from nearby explosion — one flame, brief burn
-	const SPLASH_BURN_DURATION = 0.4;
+	const SPLASH_BURN_DURATION = 0.4; // seconds of single-flame fire for splash damage
 	let health = $state(TANK_MAX_HEALTH);
 	let burning = $state(false);
 	let tankDestroyed = $state(false);
@@ -647,6 +661,11 @@
 		hullGeometry.computeVertexNormals();
 		speed = 0;
 		velocityY = 0;
+		drX = NaN;
+		drZ = NaN;
+		drLastSnapX = NaN;
+		drLastSnapZ = NaN;
+		drStopped = false;
 		tankHeading = sh;
 		tankPitch = 0;
 		tankRoll = 0;
@@ -659,6 +678,22 @@
 		wakeTimer = 0;
 		snapTankToTerrain(sx, sz);
 		resetCamera();
+	}
+
+	/** Returns the current tank state for network broadcast. index must be set by caller. */
+	export function getState(index: number): TankSnapshot {
+		return {
+			index,
+			x: tankPosition.x,
+			y: tankPosition.y,
+			z: tankPosition.z,
+			heading: tankHeading,
+			turretHeading,
+			barrelElevation,
+			speed,
+			health,
+			destroyed: tankDestroyed
+		};
 	}
 
 	// Snap to terrain on first mount (initGame runs before Tank mounts, so heights are ready)
@@ -720,6 +755,93 @@
 				}
 				posAttr.needsUpdate = true;
 				if (backT > 0 || frontT > 0) hullGeometry.computeVertexNormals();
+			}
+		}
+
+		// Remote mode — drive from network state instead of local physics or AI.
+		// Active for any opponent slot that has a received snapshot (human guests or AI on host).
+		if (remoteStateMap !== null && _localIndex > 0) {
+			const rs = remoteStateMap.get(_localIndex);
+			if (rs !== undefined) {
+				const DR_MAX_SLOPE = Math.tan((35 * Math.PI) / 180);
+
+				// On new snapshot: reset dead-reckoning base to authoritative position
+				if (rs.x !== drLastSnapX || rs.z !== drLastSnapZ) {
+					drX = rs.x;
+					drZ = rs.z;
+					drLastSnapX = rs.x;
+					drLastSnapZ = rs.z;
+					drStopped = false;
+				}
+
+				// Dead-reckoning: extrapolate forward using last known speed + heading.
+				// Slope check mirrors real physics — stops prediction when hill is too steep.
+				if (rs.speed !== 0 && !drStopped) {
+					const nextX = drX - Math.sin(rs.heading) * rs.speed * delta;
+					const nextZ = drZ - Math.cos(rs.heading) * rs.speed * delta;
+					const eps = 0.5;
+					const dhdx =
+						(getTerrainHeight(nextX + eps, nextZ) - getTerrainHeight(nextX - eps, nextZ)) /
+						(2 * eps);
+					const dhdz =
+						(getTerrainHeight(nextX, nextZ + eps) - getTerrainHeight(nextX, nextZ - eps)) /
+						(2 * eps);
+					const sinH = Math.sin(rs.heading);
+					const cosH = Math.cos(rs.heading);
+					const slopeForward = dhdx * -sinH + dhdz * -cosH;
+					if (
+						(rs.speed > 0 && slopeForward > DR_MAX_SLOPE) ||
+						(rs.speed < 0 && slopeForward < -DR_MAX_SLOPE)
+					) {
+						drStopped = true;
+					} else {
+						drX = nextX;
+						drZ = nextZ;
+					}
+				}
+
+				// Smooth visual position toward dead-reckoned XZ; snap Y to local terrain.
+				const LERP = Math.min(1, delta * 12);
+				const groundY = getTrackHeight(drX, drZ, rs.heading);
+				tankPosition = new THREE.Vector3(
+					tankPosition.x + (drX - tankPosition.x) * LERP,
+					tankPosition.y + (groundY - tankPosition.y) * LERP,
+					tankPosition.z + (drZ - tankPosition.z) * LERP
+				);
+				tankHeading += normalizeAngle(rs.heading - tankHeading) * LERP;
+				turretHeading += normalizeAngle(rs.turretHeading - turretHeading) * LERP;
+				barrelElevation += (rs.barrelElevation - barrelElevation) * LERP;
+				speed = rs.speed;
+				const prevHealth = health;
+				health = rs.health;
+				// Trigger visible fire whenever health drops — burn duration scales with damage size
+				if (rs.health < prevHealth && !rs.destroyed) {
+					const dmg = prevHealth - rs.health;
+					const big = dmg > 20;
+					burning = true;
+					burnElapsed = 0;
+					burnDuration = big ? CENTER_BURN_DURATION : SPLASH_BURN_DURATION;
+					burnDamageRate = 0; // health driven by network, no local drain
+					flameCount = big ? 6 : 1;
+					hitOffsetX = 0;
+					hitOffsetZ = 0;
+				}
+				// Advance burn timer (the normal burn block is skipped by the early return)
+				if (burning) {
+					burnElapsed += delta;
+					if (burnElapsed >= burnDuration) burning = false;
+				}
+				if (!tankDestroyed && rs.destroyed) {
+					tankDestroyed = true;
+					burning = false;
+					ownBody.hitAt = Date.now();
+					if (tankGroupRef) tankGroupRef.visible = false;
+				}
+				ownBody.x = tankPosition.x;
+				ownBody.y = tankPosition.y;
+				ownBody.z = tankPosition.z;
+				enginePlaybackRate = 0.5 + Math.abs(speed) * 0.04;
+				return;
 			}
 		}
 

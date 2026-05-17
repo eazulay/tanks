@@ -7,6 +7,7 @@
 	const routeRoomId = $derived(page.params.roomId ?? '');
 
 	let playerName = $state('');
+	let muted = $state(false);
 	let now = $state(Date.now());
 	let joinRequestSent = false;
 	let wasInRoom = false;
@@ -61,7 +62,7 @@
 			const { aiCount, assignments } = mp.gameStart;
 			// Total opponents = (human players − self) + AI tanks
 			const totalOpponents = assignments.length - 1 + aiCount;
-			goto(`/game?opponents=${totalOpponents}`);
+			goto(`/game?opponents=${totalOpponents}${muted ? '&muted=1' : ''}`);
 		}
 	});
 
@@ -112,14 +113,8 @@
 		send({ type: 'set_color', colorIndex: idx });
 	}
 
-	function decrementAi() {
-		if ((mp.room?.aiCount ?? 0) <= 0) return;
-		send({ type: 'set_ai_count', count: (mp.room?.aiCount ?? 1) - 1 });
-	}
-
-	function incrementAi() {
-		if ((mp.room?.aiCount ?? 0) >= maxAi) return;
-		send({ type: 'set_ai_count', count: (mp.room?.aiCount ?? 0) + 1 });
+	function setAi(n: number) {
+		send({ type: 'set_ai_count', count: n });
 	}
 
 	function acceptJoin(clientId: string) {
@@ -206,19 +201,34 @@
 			<!-- AI opponents -->
 			<section class="section section-ai">
 				<span class="ai-label">AI Opponents</span>
-				<div class="ai-stepper">
-					<button
-						class="step-btn"
-						disabled={mp.room.aiCount <= 0 || mp.room.locked}
-						onclick={decrementAi}
-					>−</button>
-					<span class="ai-count">{mp.room.aiCount}</span>
-					<button
-						class="step-btn"
-						disabled={mp.room.aiCount >= maxAi || mp.room.locked}
-						onclick={incrementAi}
-					>+</button>
+				<div class="radio-group">
+					{#each [0, 1, 2, 3, 4] as n}
+						<label
+							class="radio-chip"
+							class:selected={mp.room.aiCount === n}
+							class:disabled={n > maxAi || mp.room.locked}
+						>
+							<input
+								type="radio"
+								name="ai-count"
+								value={n}
+								checked={mp.room.aiCount === n}
+								disabled={n > maxAi || mp.room.locked}
+								onchange={() => setAi(n)}
+							/>
+							{n}
+						</label>
+					{/each}
 				</div>
+			</section>
+
+			<!-- Mute sounds -->
+			<section class="section section-ai">
+				<label class="ai-label mute-label" for="mute-check">Mute Sounds</label>
+				<label class="mute-toggle">
+					<input id="mute-check" type="checkbox" bind:checked={muted} />
+					<span class="mute-box" class:checked={muted}></span>
+				</label>
 			</section>
 
 			<!-- Room access lock -->
@@ -552,7 +562,7 @@
 		cursor: not-allowed;
 	}
 
-	/* ---- AI stepper ---- */
+	/* ---- AI / mute sections ---- */
 
 	.section-ai {
 		display: flex;
@@ -572,42 +582,98 @@
 		color: #8a9a7a;
 	}
 
-	.ai-stepper {
+	/* ---- Radio chips ---- */
+
+	.radio-group {
 		display: flex;
-		align-items: center;
-		gap: 0.6rem;
+		gap: 6px;
 	}
 
-	.step-btn {
-		width: 28px;
-		height: 28px;
+	.radio-chip {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 32px;
+		height: 32px;
 		border-radius: 4px;
 		border: 1px solid rgba(212, 168, 50, 0.3);
-		background: rgba(212, 168, 50, 0.08);
-		color: #d4a832;
+		background: rgba(212, 168, 50, 0.06);
+		color: #8a9a7a;
+		font-family: 'Bebas Neue', sans-serif;
 		font-size: 1.1rem;
-		line-height: 1;
 		cursor: pointer;
 		transition:
 			background 0.12s,
+			border-color 0.12s,
+			color 0.12s,
 			opacity 0.12s;
 	}
 
-	.step-btn:hover:not(:disabled) {
-		background: rgba(212, 168, 50, 0.18);
+	.radio-chip input {
+		display: none;
 	}
 
-	.step-btn:disabled {
-		opacity: 0.3;
+	.radio-chip:hover:not(.disabled) {
+		background: rgba(212, 168, 50, 0.14);
+		border-color: rgba(212, 168, 50, 0.5);
+		color: #d4a832;
+	}
+
+	.radio-chip.selected {
+		background: rgba(212, 168, 50, 0.2);
+		border-color: #d4a832;
+		color: #d4a832;
+	}
+
+	.radio-chip.disabled {
+		opacity: 0.25;
 		cursor: not-allowed;
 	}
 
-	.ai-count {
-		font-family: 'Bebas Neue', sans-serif;
-		font-size: 1.4rem;
-		color: #d4a832;
-		min-width: 1.4ch;
-		text-align: center;
+	/* ---- Mute toggle ---- */
+
+	.mute-label {
+		cursor: default;
+	}
+
+	.mute-toggle {
+		display: flex;
+		align-items: center;
+		cursor: pointer;
+	}
+
+	.mute-toggle input {
+		display: none;
+	}
+
+	.mute-box {
+		width: 18px;
+		height: 18px;
+		border-radius: 3px;
+		border: 1.5px solid rgba(212, 168, 50, 0.35);
+		background: rgba(212, 168, 50, 0.06);
+		transition:
+			background 0.12s,
+			border-color 0.12s;
+		position: relative;
+	}
+
+	.mute-box.checked {
+		background: rgba(212, 168, 50, 0.25);
+		border-color: #d4a832;
+	}
+
+	.mute-box.checked::after {
+		content: '';
+		position: absolute;
+		left: 4px;
+		top: 1px;
+		width: 5px;
+		height: 9px;
+		border: 2px solid #d4a832;
+		border-top: none;
+		border-left: none;
+		transform: rotate(45deg);
 	}
 
 	/* ---- Lock toggle ---- */

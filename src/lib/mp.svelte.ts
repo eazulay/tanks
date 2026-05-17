@@ -2,9 +2,12 @@
 
 import { browser } from '$app/environment';
 import { parseMessage, encodeMessage } from './types.js';
-import type { ClientMessage, ServerMessage, RoomSummary, RoomState } from './types.js';
+import type { ClientMessage, ServerMessage, RoomSummary, RoomState, TankSnapshot } from './types.js';
 
 export const TANK_COLORS = ['#CBFF70', '#FFD060', '#80CCFF', '#FF8055', '#CC80FF', '#60FFD0'] as const;
+
+/** How many times per second each client broadcasts its own tank state. */
+export const TANK_STATE_HZ = 10;
 
 export type GameStart = {
 	seed: number;
@@ -27,9 +30,32 @@ export const mp = $state({
 });
 
 let _ws: WebSocket | null = null;
+let _connectedAs = ''; // name used for the current connection in this window
 
 export function send(msg: ClientMessage): void {
 	if (_ws?.readyState === 1) _ws.send(encodeMessage(msg));
+}
+
+// ---------------------------------------------------------------------------
+// In-game event handlers — set by Scene.svelte during gameplay, cleared on destroy.
+// Using a mutable object so the reference stays stable across module re-evaluations.
+// ---------------------------------------------------------------------------
+
+export interface GameHandlers {
+	onTankState?: (snapshot: TankSnapshot) => void;
+	onTankHit?: (tankIndex: number, hitDist: number, wx: number, wz: number, splash?: boolean) => void;
+	onShellFired?: (shellId: number, x: number, y: number, z: number, vx: number, vy: number, vz: number, firingBodyUid?: number) => void;
+	onShellRemoved?: (shellId: number) => void;
+	onExplosion?: (x: number, y: number, z: number, tankExplosion: boolean, color: string) => void;
+	onTreeIgnited?: (treeId: number) => void;
+	onGameOver?: () => void;
+	onTransferHost?: (newHostClientId: string) => void;
+}
+
+let _gameHandlers: GameHandlers | null = null;
+
+export function setGameHandlers(h: GameHandlers | null): void {
+	_gameHandlers = h;
 }
 
 function handle(msg: ServerMessage): void {
@@ -86,22 +112,70 @@ function handle(msg: ServerMessage): void {
 		case 'player_left':
 			mp.latestPlayerLeft = { clientId: msg.clientId, name: msg.name };
 			break;
+
+		// --- In-game events forwarded to Scene ---
+		case 'tank_state':
+			_gameHandlers?.onTankState?.(msg as unknown as TankSnapshot);
+			break;
+		case 'tank_hit':
+			_gameHandlers?.onTankHit?.(msg.tankIndex, msg.hitDist, msg.wx, msg.wz, msg.splash);
+			break;
+		case 'shell_fired':
+			_gameHandlers?.onShellFired?.(
+				msg.shellId,
+				msg.x,
+				msg.y,
+				msg.z,
+				msg.vx,
+				msg.vy,
+				msg.vz,
+				msg.firingBodyUid
+			);
+			break;
+		case 'shell_removed':
+			_gameHandlers?.onShellRemoved?.(msg.shellId);
+			break;
+		case 'explosion':
+			_gameHandlers?.onExplosion?.(msg.x, msg.y, msg.z, msg.tankExplosion, msg.color);
+			break;
+		case 'tree_ignited':
+			_gameHandlers?.onTreeIgnited?.(msg.treeId);
+			break;
+		case 'game_over':
+			_gameHandlers?.onGameOver?.();
+			break;
+		case 'transfer_host':
+			_gameHandlers?.onTransferHost?.(msg.newHostClientId);
+			break;
 	}
+}
+
+/** Explicitly update the display name for the current connection.
+ * Call this when the user intentionally changes their name (e.g. on the home page).
+ * Safe to call when disconnected — the name is remembered for the next connect(). */
+export function updateName(name: string): void {
+	_connectedAs = name;
+	send({ type: 'set_name', name });
 }
 
 export function connect(name: string): void {
 	if (!browser) return;
 	if (_ws && (_ws.readyState === 0 || _ws.readyState === 1)) {
-		send({ type: 'set_name', name });
+		// Already connected — name is managed by updateName(), not re-read from localStorage here.
+		// Re-reading localStorage would pick up name changes from other windows/tabs.
 		return;
 	}
+
+	// Use the name this window's user last set explicitly; fall back to the passed value
+	// (which comes from localStorage on first connection in this window).
+	_connectedAs = _connectedAs || name;
 
 	const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 	_ws = new WebSocket(`${protocol}//${location.host}/ws`);
 
 	_ws.onopen = () => {
 		mp.connected = true;
-		send({ type: 'set_name', name });
+		send({ type: 'set_name', name: _connectedAs });
 		// CPU benchmark for physics host election (~50 ms)
 		const t0 = performance.now();
 		let ops = 0;
@@ -138,6 +212,7 @@ export function leaveRoom(): void {
 export function disconnect(): void {
 	_ws?.close();
 	_ws = null;
+	_connectedAs = '';
 	mp.connected = false;
 	mp.clientId = null;
 	mp.rooms = [];

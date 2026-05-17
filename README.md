@@ -53,3 +53,50 @@ npm run dev
 ```
 
 Then open [http://localhost:5173](http://localhost:5173) in your browser.
+
+## Comments about mutiplayer game internals
+
+### Multiplayer P2P physics (Scene.svelte, relay.ts, +page.svelte, Tank.svelte):
+
+- Each player runs their own tank physics locally and broadcasts tank_state at 10 Hz; physics host also broadcasts AI states
+- All shell physics run on the firing client (isHost=true); other clients see visual-only shells (isHost=false) that wait for shell_removed to be cleaned up
+- handlePlayerFire/handleOpponentFire send shell_fired; handleImpact sends explosion + tree_ignited + tank_hit (for splash); handleShellTankHit sends tank_hit for remote human tanks, writes body.lastHit locally for own/AI tanks
+- handleTankExplosion sends explosion + tree_ignited to other clients
+- onTankHit handler applies body.lastHit only when the hit is directed at own relay index
+- onShellFired/onExplosion/onTreeIgnited handlers create visual counterparts locally + deform terrain in sync
+- relay.ts: all in-game events now use forwardToAll (any client → all others)
+- +page.svelte: computes isHost, selfRelayIndex from mp.gameStart and passes to <Scene>
+- fullRelayToLocal/fullLocalToRelay maps in Scene cover both human and AI tank relay indices
+
+### Terrain persistence (Scene.svelte):
+
+- dirtyVertices: Set<number> tracks all modified terrain vertices
+- Every 8 seconds: saveTerrainState() writes [[index, height, r, g, b], ...] to localStorage under terrain\_${gameSeed}
+- On initGame(): restoreTerrainState() re-applies any saved modifications after terrain generation, restoring crater state across page reloads
+
+### How multplayer games share calc resposibility when shells fly:
+
+Firing player (any client):
+
+- Creates a local isHost=true shell — runs physics, detects hits
+- Sends shell_fired to relay
+- When shell hits terrain: creates explosion locally, sends explosion + shell_removed to all
+- When shell hits a human player: sends tank_hit to relay; that player applies their own damage
+- When shell hits an AI tank and the firer is not the host: drops the hit silently — the host's copy handles it
+
+Physics host (on receiving a guest's shell_fired):
+
+- Creates an aiDetectorOnly=true, isHost=true physics copy
+- Runs the same deterministic physics — same gravity, same terrain — so it reaches the same positions
+- Detects AI tank hits only, applies damage directly, no relay message needed
+- Suppresses terrain explosion and shell_removed — the firer already handles those
+- Removed silently when the firer's shell_removed arrives (or when it hits terrain first)
+
+Other players (neither firer nor host):
+
+- Receive shell_fired → create isHost=false visual shells
+- These still run local physics (gravity, position update) for smooth interpolation, but detect nothing
+- Receive shell_removed → remove the visual shell
+- Receive explosion → show the explosion
+
+So effectively: the firer owns terrain impact and human hit detection; the host owns AI hit detection; everyone else just animates the shell locally and reacts to relay events.

@@ -2,6 +2,7 @@ import type * as THREE from 'three';
 
 export interface TankBody {
 	uid: number;
+	relayIndex: number; // -1 = AI or single-player; ≥0 = player's relay tankIndex
 	x: number;
 	y: number;
 	z: number;
@@ -96,7 +97,7 @@ export interface TankSnapshot {
 	heading: number;
 	turretHeading: number;
 	barrelElevation: number;
-	speed: number; // used by guests for dead-reckoning between snapshots
+	speed: number; // used for dead-reckoning and wheel/engine animation on remote clients
 	health: number;
 	destroyed: boolean;
 }
@@ -146,29 +147,8 @@ type ClickStartMsg = { type: 'click_start' };
  */
 type ClickCancelMsg = { type: 'click_cancel' };
 
-/**
- * Guest's control state for the current frame, forwarded by relay to host.
- * `fire` is null when not firing; 0–1 charge level when releasing a shot.
- */
-type PlayerInputMsg = {
-	type: 'player_input';
-	seq: number; // monotonically increasing; host discards out-of-order packets
-	up: boolean;
-	down: boolean;
-	left: boolean;
-	right: boolean;
-	turretLeft: boolean;
-	turretRight: boolean;
-	barrelUp: boolean;
-	barrelDown: boolean;
-	braking: boolean;
-	fire: number | null;
-};
 
-/** Full tank state snapshot sent by host at ~20 Hz. */
-type GameStateMsg = { type: 'game_state'; seq: number; tanks: TankSnapshot[] };
-
-/** Host fired a shell; guests spawn it and run local physics for visual smoothness. */
+/** Any player fired a shell; relay forwards to all others. */
 type ShellFiredMsg = {
 	type: 'shell_fired';
 	shellId: number;
@@ -179,10 +159,28 @@ type ShellFiredMsg = {
 	vy: number;
 	vz: number;
 	tracked: boolean;
+	firingBodyUid?: number; // UID of firing tank body — used on host for self-hit grace window
 };
 
-/** Shell left the world (OOB or impact); guests should remove it. */
+/** Shell left the world (OOB or impact); all clients should remove it. */
 type ShellRemovedMsg = { type: 'shell_removed'; shellId: number };
+
+/**
+ * State broadcast by each player for their own tank at TANK_STATE_HZ.
+ * Physics host also sends this for each AI tank.
+ * index = relay tankIndex (matches game_start assignments).
+ */
+type TankStateMsg = { type: 'tank_state' } & TankSnapshot;
+
+/** Physics host notifies all clients that a shell hit a specific tank. */
+type TankHitMsg = {
+	type: 'tank_hit';
+	tankIndex: number; // relay tankIndex of the hit tank
+	hitDist: number; // 0..HIT_RADIUS for damage calculation
+	wx: number;
+	wz: number;
+	splash?: boolean;
+};
 
 /** Shell or tank destruction triggered an explosion. */
 type ExplosionMsg = {
@@ -200,6 +198,9 @@ type TreeIgnitedMsg = { type: 'tree_ignited'; treeId: number };
 /** Host detected game over. */
 type GameOverMsg = { type: 'game_over' };
 
+/** Relay elected a new physics host after the previous host disconnected. */
+type TransferHostMsg = { type: 'transfer_host'; newHostClientId: string };
+
 /** Broadcast to remaining in-game players when a non-host player disconnects mid-game. */
 type PlayerLeftMsg = { type: 'player_left'; clientId: string; name: string };
 
@@ -216,8 +217,8 @@ export type ClientMessage =
 	| SetColorMsg
 	| ClickStartMsg
 	| ClickCancelMsg
-	| PlayerInputMsg
-	| GameStateMsg
+	| TankStateMsg
+	| TankHitMsg
 	| ShellFiredMsg
 	| ShellRemovedMsg
 	| ExplosionMsg
@@ -273,12 +274,6 @@ type GameStartMsg = {
 /** Relay reporting a protocol or validation error to the sender. */
 type ErrorMsg = { type: 'error'; code: string; message: string };
 
-/**
- * player_input forwarded from relay to host — same shape as PlayerInputMsg
- * but with clientId attached by the relay.
- */
-type ForwardedInputMsg = PlayerInputMsg & { clientId: string };
-
 export type ServerMessage =
 	| WelcomeMsg
 	| LobbyUpdateMsg
@@ -291,13 +286,14 @@ export type ServerMessage =
 	| KickedMsg
 	| GameStartMsg
 	| ErrorMsg
-	| ForwardedInputMsg
-	| GameStateMsg
+	| TankStateMsg
+	| TankHitMsg
 	| ShellFiredMsg
 	| ShellRemovedMsg
 	| ExplosionMsg
 	| TreeIgnitedMsg
 	| GameOverMsg
+	| TransferHostMsg
 	| PlayerLeftMsg;
 
 // --- Helpers ---
