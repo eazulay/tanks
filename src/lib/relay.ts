@@ -637,7 +637,7 @@ export function createRelay(wss: WebSocketServer): void {
 		send(ws, { type: 'welcome', clientId });
 		send(ws, { type: 'lobby_update', rooms: buildLobbySummaries() });
 
-		ws.on('message', (data) => handleMessage(wsToClientId.get(ws) ?? clientId, data.toString()));
+		ws.on('message', (data: import('ws').RawData) => handleMessage(wsToClientId.get(ws) ?? clientId, data.toString()));
 		ws.on('close', () => {
 			const effectiveId = wsToClientId.get(ws) ?? clientId;
 			wsToClientId.delete(ws);
