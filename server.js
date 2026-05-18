@@ -23,4 +23,8 @@ server.on('upgrade', (request, socket, head) => {
 
 server.listen(port, () => {
 	console.log(`Tank Royale listening on port ${port}`);
+	// Temporary: write port to file so it can be read from cPanel File Manager
+	import('fs').then(({ writeFileSync }) => {
+		try { writeFileSync(new URL('./port.txt', import.meta.url), String(port)); } catch {}
+	});
 });
