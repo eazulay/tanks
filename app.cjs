@@ -1,1 +1,3 @@
-import('./server.js').catch(console.error);
+(async () => {
+	await import('./server.js');
+})();
