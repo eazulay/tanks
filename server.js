@@ -15,16 +15,12 @@ const wss = new WebSocketServer({ noServer: true });
 createRelay(wss);
 
 server.on('upgrade', (request, socket, head) => {
+	console.log(`WebSocket upgrade: ${request.url}`);
 	if (request.url === '/ws') {
 		wss.handleUpgrade(request, socket, head, (ws) => wss.emit('connection', ws));
 	}
-	// Other upgrade paths (none expected in production) are left unhandled
 });
 
 server.listen(port, () => {
 	console.log(`Tank Royale listening on port ${port}`);
-	// Temporary: write port to file so it can be read from cPanel File Manager
-	import('fs').then(({ writeFileSync }) => {
-		try { writeFileSync(new URL('./port.txt', import.meta.url), String(port)); } catch {}
-	});
 });
