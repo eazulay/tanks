@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import { unlockAudio } from '$lib/audioUnlock';
+	import Footer from '$lib/Footer.svelte';
 
 	let opponents = $state(browser ? (parseInt(localStorage.getItem('sp_aiCount') ?? '1', 10) || 1) : 1);
 	let muted = $state(false);
@@ -48,6 +49,7 @@
 		>
 	</div>
 </main>
+<Footer />
 
 <style>
 	@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500&display=swap');

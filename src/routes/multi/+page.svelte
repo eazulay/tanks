@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { mp, connect, send, TANK_COLORS } from '$lib/mp.svelte.js';
+	import Footer from '$lib/Footer.svelte';
 
 	let playerName = $state('');
 
@@ -138,6 +139,7 @@
 		</button>
 	</div>
 </main>
+<Footer />
 
 <style>
 	@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&display=swap');
