@@ -59,10 +59,7 @@
 	// Navigate to game when it starts
 	$effect(() => {
 		if (mp.gameStart) {
-			const { aiCount, assignments } = mp.gameStart;
-			// Total opponents = (human players − self) + AI tanks
-			const totalOpponents = assignments.length - 1 + aiCount;
-			goto(`/game?opponents=${totalOpponents}${muted ? '&muted=1' : ''}`);
+			goto(`/game${muted ? '?muted=1' : ''}`);
 		}
 	});
 
