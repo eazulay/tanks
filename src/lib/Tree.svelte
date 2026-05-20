@@ -77,8 +77,10 @@
 	let isBurnt = $state(false);
 	let fireSoundVolume = $state(1.0);
 
+	let burnTaskRunning = $state(true);
+
 	useTask(() => {
-		if (burntAt === null || isBurnt) return;
+		if (burntAt === null) return;
 
 		const elapsed = Date.now() - burntAt;
 		const burnFraction = Math.min(elapsed / BURN_DURATION, 1);
@@ -94,8 +96,9 @@
 		if (elapsed >= BURN_DURATION) {
 			isBurnt = true;
 			isBurning = false;
+			burnTaskRunning = false;
 		}
-	});
+	}, { running: () => burnTaskRunning });
 
 	onDestroy(() => {
 		trunkGeo.dispose();

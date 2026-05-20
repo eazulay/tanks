@@ -142,7 +142,9 @@
 		debrisMat.dispose();
 	});
 
-	const { stop } = useTask((delta) => {
+	let explosionTaskRunning = $state(true);
+
+	useTask((delta) => {
 		elapsed += delta;
 
 		// Fireball: expand via sin curve while fading
@@ -232,10 +234,10 @@
 		}
 
 		if (ft >= 1 && allDebrisDone && splashes.length === 0) {
-			stop();
+			explosionTaskRunning = false;
 			onremove?.();
 		}
-	});
+	}, { running: () => explosionTaskRunning });
 </script>
 
 <T.Mesh

@@ -342,6 +342,8 @@
 	// selfRelayIndex * 100000, so host and guest IDs can't collide.
 	const _selfRelayIndex = untrack(() => selfRelayIndex);
 	let _isHost = untrack(() => isHost);
+	setContext('selfRelayIndex', _selfRelayIndex);
+	setContext('getIsHost', () => _isHost);
 	const _passedRelayToLocal = untrack(() => relayToLocal);
 	const _isMultiplayer = _passedRelayToLocal !== null;
 	// Stable self-client ID for host-migration comparison (only meaningful in multiplayer)
@@ -558,8 +560,6 @@
 		velocity: THREE.Vector3;
 		tracked: boolean; // true only for the player-controlled tank's shells
 		firingBodyUid: number; // UID of firing tank body — compared with body.uid (not a reference, avoids Svelte proxy identity issues)
-		isHost: boolean; // false for visual-only shells received from network
-		aiDetectorOnly?: boolean; // host-side physics copy of a guest shell — only detects AI hits, sends no relay messages
 	}
 	let shells = $state<ShellInstance[]>([]);
 
@@ -569,7 +569,7 @@
 		firingBodyUid: number
 	) {
 		const id = nextShellId++;
-		shells.push({ id, position, velocity, tracked: true, firingBodyUid, isHost: true });
+		shells.push({ id, position, velocity, tracked: true, firingBodyUid });
 		trackedExplosionId = null;
 		if (_isMultiplayer) {
 			send({
@@ -589,7 +589,7 @@
 		firingBodyUid: number
 	) {
 		const id = nextShellId++;
-		shells.push({ id, position, velocity, tracked: false, firingBodyUid, isHost: true });
+		shells.push({ id, position, velocity, tracked: false, firingBodyUid });
 		if (_isMultiplayer && _isHost) {
 			send({
 				type: 'shell_fired',
@@ -601,51 +601,17 @@
 		}
 	}
 
-	// Shell hit a tank — decide locally vs relay depending on who owns the hit tank.
-	// Called for shells with isHost=true (own shells, AI shells, host's aiDetectorOnly copies excluded).
-	// Routes the hit: human remote player → relay; AI on this host → direct; AI on non-host → drop
-	// (the host's aiDetectorOnly physics copy of the same shell handles it directly).
-	function handleShellTankHit(bodyUid: number, dist: number, wx: number, wz: number) {
-		const body = tankBodies.find((b) => b.uid === bodyUid);
-		if (!body) return;
-		if (_isMultiplayer && body.relayIndex >= 0 && body.relayIndex !== _selfRelayIndex) {
-			const isHuman = _passedRelayToLocal?.has(body.relayIndex) ?? false;
-			if (isHuman) {
-				// Remote human player — relay so they apply damage locally
-				send({ type: 'tank_hit', tankIndex: body.relayIndex, hitDist: dist, wx, wz });
-			} else if (_isHost) {
-				// AI tank, we are host — apply directly
-				body.lastHit = { dist, wx, wz };
-			}
-			// Non-host hitting AI: drop — the host's aiDetectorOnly copy of this shell handles it
-		} else {
-			// Own tank (self-hit after grace) → write directly
-			body.lastHit = { dist, wx, wz };
-		}
-	}
-
-	// Called only for the host's aiDetectorOnly copies of guest shells.
-	// Detects AI hits without relay; human tanks are intentionally skipped
-	// (the guest's own shell handles those via tank_hit).
-	function handleAiOnlyTankHit(bodyUid: number, dist: number, wx: number, wz: number) {
-		const body = tankBodies.find((b) => b.uid === bodyUid);
-		if (!body || body.hitAt !== null || body.lastHit !== null) return;
-		if (_passedRelayToLocal?.has(body.relayIndex)) return; // human — guest handles
-		if (body.relayIndex === _selfRelayIndex) return; // own tank
-		body.lastHit = { dist, wx, wz };
-	}
-
 	function removeShell(id: number) {
 		const shell = shells.find((s) => s.id === id);
 		const wasTracked = shell?.tracked ?? false;
-		// aiDetectorOnly shells are the host's private physics copies — they never send relay messages
-		const wasLocalShell = (shell?.isHost ?? false) && !(shell?.aiDetectorOnly ?? false);
+		const firingBody = shell ? tankBodies.find((b) => b.uid === shell.firingBodyUid) : undefined;
+		const wasOwner = firingBody
+			? firingBody.relayIndex === _selfRelayIndex || (_isHost && firingBody.relayIndex < 0)
+			: false;
 		shells = shells.filter((s) => s.id !== id);
-		// Broadcast removal so other clients unmount their visual copy
-		if (_isMultiplayer && wasLocalShell) {
+		if (_isMultiplayer && wasOwner) {
 			send({ type: 'shell_removed', shellId: id });
 		}
-		// OOB exit: shell left bounds with no explosion — end sequence now
 		if (wasTracked && trackedExplosionId === null) {
 			shellFollow.pos = null;
 			window.dispatchEvent(new CustomEvent('shell-sequence-done'));
@@ -674,6 +640,7 @@
 		sz: number;
 		color: string;
 	}
+	const MAX_LANDED_SHEETS = 60;
 	let landedSheets = $state<SheetData[]>([]);
 	let nextSheetId = 0;
 
@@ -945,24 +912,20 @@
 				}
 			},
 			onTankHit(tankIndex, hitDist, wx, wz, splash) {
-				// Direct shell hits on AI are handled by the host's aiDetectorOnly physics copies.
-				// This handler only needs to act when this client's own tank is hit.
+				// Direct shell hits are handled locally by Shell.svelte.
+				// This handler only covers splash damage reaching this client's own tank.
 				if (tankIndex !== _selfRelayIndex) return;
 				const body = tankBodies.find((b) => b.relayIndex === _selfRelayIndex);
 				if (body && body.hitAt === null && body.lastHit === null)
 					body.lastHit = { dist: hitDist, wx, wz, splash };
 			},
 			onShellFired(shellId, x, y, z, vx, vy, vz, firingBodyUid) {
-				// Host creates a physics copy (aiDetectorOnly) to detect AI hits without relay.
-				// Non-host clients get a visual-only shell (isHost=false).
 				shells.push({
 					id: shellId,
 					position: new THREE.Vector3(x, y, z),
 					velocity: new THREE.Vector3(vx, vy, vz),
 					tracked: false,
-					firingBodyUid: firingBodyUid ?? -1,
-					isHost: _isHost,
-					aiDetectorOnly: _isHost
+					firingBodyUid: firingBodyUid ?? -1
 				});
 			},
 			onShellRemoved(shellId) {
@@ -1126,14 +1089,9 @@
 	<Shell
 		position={s.position}
 		velocity={s.velocity}
-		excludeBodyUid={s.firingBodyUid}
-		tracked={s.tracked}
-		isHost={s.isHost}
+		firingBodyUid={s.firingBodyUid}
 		onremove={() => removeShell(s.id)}
-		onimpact={s.isHost && !s.aiDetectorOnly ? (pos) => handleImpact(pos, s.tracked) : undefined}
-		ontankhit={s.isHost && _isMultiplayer
-			? (s.aiDetectorOnly ? handleAiOnlyTankHit : handleShellTankHit)
-			: undefined}
+		onimpact={(pos) => handleImpact(pos, s.tracked)}
 	/>
 {/each}
 
@@ -1150,6 +1108,8 @@
 				x, y, z, rx, ry, rz, sx, sy, sz,
 				color: e.color ?? '#4a3f38'
 			});
+			if (landedSheets.length > MAX_LANDED_SHEETS)
+				landedSheets = landedSheets.slice(-MAX_LANDED_SHEETS);
 		}}
 		onremove={() => removeExplosion(e.id)}
 	/>

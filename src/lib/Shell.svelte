@@ -9,29 +9,23 @@
 	let {
 		position,
 		velocity,
-		excludeBodyUid = undefined,
-		tracked = false,
-		isHost = true,
+		firingBodyUid,
 		onremove,
-		onimpact,
-		ontankhit = undefined as
-			| ((bodyUid: number, dist: number, wx: number, wz: number) => void)
-			| undefined
+		onimpact
 	}: {
 		position: THREE.Vector3;
 		velocity: THREE.Vector3;
-		excludeBodyUid?: number;
-		tracked?: boolean;
-		isHost?: boolean;
+		firingBodyUid: number;
 		onremove?: () => void;
 		onimpact?: (position: THREE.Vector3) => void;
-		ontankhit?: (bodyUid: number, dist: number, wx: number, wz: number) => void;
 	} = $props();
 
 	const getTerrainHeight: (wx: number, wz: number) => number = getContext('getTerrainHeight');
 	const isInBounds: (wx: number, wz: number) => boolean = getContext('isInBounds');
 	const shellFollow = getContext<ShellFollow>('shellFollow');
 	const tankBodies = getContext<TankBody[]>('tankBodies');
+	const selfRelayIndex = getContext<number>('selfRelayIndex');
+	const getIsHost = getContext<() => boolean>('getIsHost');
 	const audioId = getContext<string>('audioId') ?? 'default';
 	const forNearbyTreeVolumes =
 		getContext<(x: number, z: number, fn: (vol: TreeVol) => boolean) => void>(
@@ -52,12 +46,23 @@
 	const vel = untrack(() => velocity).clone();
 	let prevY = pos.y;
 	let firerGraceTimer = FIRER_GRACE;
+	let _removeCalled = false;
+
+	// Ownership: this client is responsible for terrain/tree impacts and sending shell_removed.
+	// True when the firer is the local player, or when the firer is an AI and this is the host.
+	const firingBody = tankBodies.find((b) => b.uid === untrack(() => firingBodyUid));
+	const amOwner = firingBody
+		? firingBody.relayIndex === selfRelayIndex || (getIsHost() && firingBody.relayIndex < 0)
+		: false;
+
+	// Only the local player's shells track the camera.
+	const _tracked = firingBody?.relayIndex === selfRelayIndex;
 
 	// Share our live position vector with the shell tracker — Tank's camera reads it when zoomed.
 	// pos is updated in-place each frame, so shellFollow.pos stays in sync automatically.
 	// Scene will overwrite this reference with the impact-point clone when the shell lands,
 	// and null it out when the full sequence (explosion) completes.
-	if (untrack(() => tracked) && shellFollow) shellFollow.pos = pos;
+	if (_tracked && shellFollow) shellFollow.pos = pos;
 
 	const shellGeo = new THREE.CylinderGeometry(0.035, 0.055, 0.38, 8);
 	const shellMat = new THREE.MeshStandardMaterial({
@@ -91,10 +96,9 @@
 	}
 	const pendingHits: PendingHit[] = [];
 
+	// Write damage only for own tank or AI tanks on the host; other humans self-detect.
 	function registerHit(body: TankBody, dist: number, wx: number, wz: number): void {
-		if (ontankhit) {
-			ontankhit(body.uid, dist, wx, wz);
-		} else {
+		if (body.relayIndex === selfRelayIndex || (getIsHost() && body.relayIndex < 0)) {
 			body.lastHit = { dist, wx, wz };
 		}
 	}
@@ -105,7 +109,7 @@
 			if (p.body.hitAt === null) {
 				registerHit(p.body, p.minDist, p.minWx, p.minWz);
 				pendingHits.splice(i, 1);
-				onimpact?.(pos.clone());
+				if (amOwner) onimpact?.(pos.clone());
 				done = true;
 				if (groupRef) groupRef.visible = false;
 				return true;
@@ -117,13 +121,7 @@
 
 	// Write the terrain/tree impact point to the firer's body so the AI can compute a correction
 	function recordImpact() {
-		if (excludeBodyUid === undefined) return;
-		for (const body of tankBodies) {
-			if (body.uid === excludeBodyUid) {
-				body.lastShellImpact = { x: pos.x, z: pos.z };
-				return;
-			}
-		}
+		if (firingBody) firingBody.lastShellImpact = { x: pos.x, z: pos.z };
 	}
 
 	let splashes = $state<SplashEntry[]>([]);
@@ -138,11 +136,13 @@
 	}
 
 	useTask((delta) => {
-		// Shell hit terrain — keep task alive until splashes finish (host shells: then remove).
-		// Visual shells (isHost=false) wait to be unmounted by Scene on shell_removed from host.
+		// Keep task alive until splashes finish; owner then calls onremove, non-owner waits for shell_removed.
 		if (done) {
 			whistleRef?.stop();
-			if (isHost && splashes.length === 0) onremove?.();
+			if (amOwner && splashes.length === 0 && !_removeCalled) {
+				_removeCalled = true;
+				onremove?.();
+			}
 			return;
 		}
 
@@ -160,14 +160,10 @@
 		pos.y += vel.y * delta;
 		pos.z += vel.z * delta;
 
-		// Out-of-bounds: visual shells just hide; host shells flush pending hit and remove.
+		// Out-of-bounds: flush any pending tank hit, then owner removes the shell, non-owner just hides.
 		if (!isInBounds(pos.x, pos.z) && pos.y < position.y - 15) {
-			if (!isHost) {
-				done = true;
-				if (groupRef) groupRef.visible = false;
-				return;
-			}
 			if (flushPendingHit()) return;
+			if (!amOwner) { done = true; if (groupRef) groupRef.visible = false; return; }
 			onremove?.();
 			return;
 		}
@@ -179,10 +175,10 @@
 			groupRef.quaternion.copy(_q);
 		}
 
-		// Tank hit detection — host only; closest-approach tracking.
-		// Declaring on first cylinder entry always records dist ≈ HIT_RADIUS (boundary), so instead
-		// we track minDist while inside and declare only when the shell starts moving away or exits.
-		if (isHost && tankBodies) {
+		// Tank hit detection — all shells check all bodies for visual correctness (shell stops at any tank).
+		// registerHit only writes damage for own tank or AI tanks on the host; others self-detect.
+		// Closest-approach tracking: declares hit when shell starts moving away or exits cylinder.
+		if (tankBodies) {
 			// Advance existing pending approaches
 			for (let i = pendingHits.length - 1; i >= 0; i--) {
 				const p = pendingHits[i];
@@ -202,7 +198,7 @@
 					// Moving away or exited — closest point reached, register hit
 					registerHit(p.body, p.minDist, p.minWx, p.minWz);
 					pendingHits.splice(i, 1);
-					onimpact?.(new THREE.Vector3(p.minWx, pos.y, p.minWz));
+					if (amOwner) onimpact?.(new THREE.Vector3(p.minWx, pos.y, p.minWz));
 					done = true;
 					if (groupRef) groupRef.visible = false;
 					return;
@@ -217,21 +213,20 @@
 				const distSq = dx * dx + dz * dz;
 				if (distSq < HIT_RADIUS * HIT_RADIUS && Math.abs(pos.y - body.y) < HIT_HEIGHT) {
 					// Firer grace: UID comparison (not object ref — Svelte $state proxies break ===)
-					if (excludeBodyUid !== undefined && body.uid === excludeBodyUid && firerGraceTimer > 0)
-						continue;
+					if (body.uid === firingBodyUid && firerGraceTimer > 0) continue;
 					pendingHits.push({ body, minDist: Math.sqrt(distSq), minWx: pos.x, minWz: pos.z });
 				}
 			}
 		}
 
-		// Tree canopy hit detection — spatial grid lookup, checks only nearby cells
+		// Tree canopy hit detection — spatial grid lookup, checks only nearby cells.
+		// All shells stop at trees; only the owner creates the explosion.
 		if (forNearbyTreeVolumes) {
 			forNearbyTreeVolumes(pos.x, pos.z, (vol) => {
 				const dx = pos.x - vol.x;
 				const dz = pos.z - vol.z;
 				if (dx * dx + dz * dz < vol.canopyR * vol.canopyR && pos.y > vol.y && pos.y < vol.top) {
-					recordImpact();
-					onimpact?.(pos.clone());
+					if (amOwner) { recordImpact(); onimpact?.(pos.clone()); }
 					done = true;
 					if (groupRef) groupRef.visible = false;
 					return true;
@@ -252,13 +247,9 @@
 
 			const groundY = getTerrainHeight(pos.x, pos.z);
 			if (pos.y <= groundY) {
-				if (isHost) {
-					// If already inside a tank's cylinder, register a tank hit instead of a terrain explosion
-					if (flushPendingHit()) return;
-					recordImpact();
-					onimpact?.(pos.clone());
-				}
-				// Visual shells (isHost=false): just stop visually; wait for shell_removed from host
+				// If already inside a tank's cylinder, register a tank hit instead of a terrain explosion
+				if (flushPendingHit()) return;
+				if (amOwner) { recordImpact(); onimpact?.(pos.clone()); }
 				done = true;
 				if (groupRef) groupRef.visible = false;
 				return;

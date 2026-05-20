@@ -230,8 +230,11 @@ function removeFromRoom(clientId: string, sendPlayerLeft = true): void {
 			return;
 		}
 		// Unanimous cancel if all remaining starters have clicked cancel
-		if (wasStarter && room.startClickerIds.size > 0 &&
-			room.cancelClickerIds.size >= room.startClickerIds.size) {
+		if (
+			wasStarter &&
+			room.startClickerIds.size > 0 &&
+			room.cancelClickerIds.size >= room.startClickerIds.size
+		) {
 			cancelCountdown(room, 'unanimous_cancel');
 			return;
 		}
@@ -391,9 +394,18 @@ function handleRequestJoin(clientId: string, roomId: string): void {
 	if (!client || client.roomId) return;
 
 	const room = rooms.get(roomId);
-	if (!room) { sendTo(clientId, { type: 'join_rejected', reason: 'not_found' }); return; }
-	if (room.locked) { sendTo(clientId, { type: 'join_rejected', reason: 'locked' }); return; }
-	if (room.playerIds.length >= maxHumans(room)) { sendTo(clientId, { type: 'join_rejected', reason: 'full' }); return; }
+	if (!room) {
+		sendTo(clientId, { type: 'join_rejected', reason: 'not_found' });
+		return;
+	}
+	if (room.locked) {
+		sendTo(clientId, { type: 'join_rejected', reason: 'locked' });
+		return;
+	}
+	if (room.playerIds.length >= maxHumans(room)) {
+		sendTo(clientId, { type: 'join_rejected', reason: 'full' });
+		return;
+	}
 
 	room.pendingJoins.set(clientId, { clientId, name: client.name });
 	broadcastRoom(roomId, { type: 'join_requested', clientId, name: client.name });
@@ -422,7 +434,10 @@ function handleAcceptJoin(acceptorId: string, targetId: string): void {
 	}
 
 	const target = clients.get(targetId);
-	if (!target) { room.pendingJoins.delete(targetId); return; }
+	if (!target) {
+		room.pendingJoins.delete(targetId);
+		return;
+	}
 
 	room.pendingJoins.delete(targetId);
 	room.playerIds.push(targetId);
@@ -435,7 +450,8 @@ function handleAcceptJoin(acceptorId: string, targetId: string): void {
 
 	// If room is now full, reject remaining pending requests
 	if (room.playerIds.length >= maxHumans(room)) {
-		for (const [pendingId] of room.pendingJoins) sendTo(pendingId, { type: 'join_rejected', reason: 'full' });
+		for (const [pendingId] of room.pendingJoins)
+			sendTo(pendingId, { type: 'join_rejected', reason: 'full' });
 		room.pendingJoins.clear();
 	}
 
@@ -451,7 +467,8 @@ function handleLockRoom(clientId: string, locked: boolean): void {
 	room.manuallyLocked = locked;
 	room.locked = locked;
 	if (locked) {
-		for (const [pendingId] of room.pendingJoins) sendTo(pendingId, { type: 'join_rejected', reason: 'locked' });
+		for (const [pendingId] of room.pendingJoins)
+			sendTo(pendingId, { type: 'join_rejected', reason: 'locked' });
 		room.pendingJoins.clear();
 	}
 	broadcastRoom(room.roomId, { type: 'room_update', room: buildRoomState(room) });
@@ -500,7 +517,8 @@ function handleSetAiCount(clientId: string, count: number): void {
 
 	// Newly over-capacity pending requests must be rejected
 	if (room.playerIds.length >= maxHumans(room)) {
-		for (const [pendingId] of room.pendingJoins) sendTo(pendingId, { type: 'join_rejected', reason: 'full' });
+		for (const [pendingId] of room.pendingJoins)
+			sendTo(pendingId, { type: 'join_rejected', reason: 'full' });
 		room.pendingJoins.clear();
 	}
 
@@ -536,7 +554,8 @@ function handleClickStart(clientId: string): void {
 		room.locked = true;
 		room.countdownEndsAt = Date.now() + 30_000;
 		room.countdownTimer = setTimeout(() => onCountdownElapsed(room.roomId), 30_000);
-		for (const [pendingId] of room.pendingJoins) sendTo(pendingId, { type: 'join_rejected', reason: 'locked' });
+		for (const [pendingId] of room.pendingJoins)
+			sendTo(pendingId, { type: 'join_rejected', reason: 'locked' });
 		room.pendingJoins.clear();
 	}
 
@@ -568,18 +587,6 @@ function handleClickCancel(clientId: string): void {
 // In-game message forwarding
 // ---------------------------------------------------------------------------
 
-/** Host → relay → all players (tank_hit, shell events, explosions, game_over). */
-function forwardToGuests(senderId: string, msg: ClientMessage): void {
-	const client = clients.get(senderId);
-	if (!client?.roomId) return;
-	// Only forward if the sender is the current host
-	const room = rooms.get(client.roomId);
-	if (!room || room.hostClientId !== senderId) return;
-	broadcastRoom(client.roomId, msg as unknown as ServerMessage, senderId);
-
-	if (msg.type === 'game_over') dissolveRoom(client.roomId);
-}
-
 /** Any player → relay → all other players. */
 function forwardToAll(senderId: string, msg: ClientMessage): void {
 	const client = clients.get(senderId);
@@ -599,26 +606,40 @@ function handleMessage(clientId: string, raw: string): void {
 	if (!msg) return;
 
 	switch (msg.type) {
-		case 'benchmark':     return handleBenchmark(clientId, msg.score);
-		case 'set_name':      return handleSetName(clientId, msg.name);
-		case 'create_room':   return handleCreateRoom(clientId);
-		case 'request_join':  return handleRequestJoin(clientId, msg.roomId);
-		case 'accept_join':   return handleAcceptJoin(clientId, msg.clientId);
-		case 'cancel_join':   return handleCancelJoin(clientId);
-		case 'leave_room':    return handleLeaveRoom(clientId);
-		case 'rejoin_game':   return handleRejoin(clientId, msg.oldClientId);
-		case 'lock_room':     return handleLockRoom(clientId, msg.locked);
-		case 'set_ai_count':  return handleSetAiCount(clientId, msg.count);
-		case 'set_color':     return handleSetColor(clientId, msg.colorIndex);
-		case 'click_start':   return handleClickStart(clientId);
-		case 'click_cancel':  return handleClickCancel(clientId);
+		case 'benchmark':
+			return handleBenchmark(clientId, msg.score);
+		case 'set_name':
+			return handleSetName(clientId, msg.name);
+		case 'create_room':
+			return handleCreateRoom(clientId);
+		case 'request_join':
+			return handleRequestJoin(clientId, msg.roomId);
+		case 'accept_join':
+			return handleAcceptJoin(clientId, msg.clientId);
+		case 'cancel_join':
+			return handleCancelJoin(clientId);
+		case 'leave_room':
+			return handleLeaveRoom(clientId);
+		case 'rejoin_game':
+			return handleRejoin(clientId, msg.oldClientId);
+		case 'lock_room':
+			return handleLockRoom(clientId, msg.locked);
+		case 'set_ai_count':
+			return handleSetAiCount(clientId, msg.count);
+		case 'set_color':
+			return handleSetColor(clientId, msg.colorIndex);
+		case 'click_start':
+			return handleClickStart(clientId);
+		case 'click_cancel':
+			return handleClickCancel(clientId);
 		case 'tank_state':
 		case 'shell_fired':
 		case 'tank_hit':
 		case 'shell_removed':
 		case 'explosion':
 		case 'tree_ignited':
-		case 'game_over':     return forwardToAll(clientId, msg);
+		case 'game_over':
+			return forwardToAll(clientId, msg);
 		// ServerMessage variants arriving from the wire are silently ignored
 	}
 }
@@ -637,7 +658,9 @@ export function createRelay(wss: WebSocketServer): void {
 		send(ws, { type: 'welcome', clientId });
 		send(ws, { type: 'lobby_update', rooms: buildLobbySummaries() });
 
-		ws.on('message', (data: import('ws').RawData) => handleMessage(wsToClientId.get(ws) ?? clientId, data.toString()));
+		ws.on('message', (data: import('ws').RawData) =>
+			handleMessage(wsToClientId.get(ws) ?? clientId, data.toString())
+		);
 		ws.on('close', () => {
 			const effectiveId = wsToClientId.get(ws) ?? clientId;
 			wsToClientId.delete(ws);

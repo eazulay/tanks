@@ -920,6 +920,22 @@
 				ownBody.x = tankPosition.x;
 				ownBody.y = tankPosition.y;
 				ownBody.z = tankPosition.z;
+				// Pitch and roll from local terrain slope at the dead-reckoned position
+				{
+					const eps = 0.5;
+					const dhdx =
+						(getTerrainHeight(drX + eps, drZ) - getTerrainHeight(drX - eps, drZ)) / (2 * eps);
+					const dhdz =
+						(getTerrainHeight(drX, drZ + eps) - getTerrainHeight(drX, drZ - eps)) / (2 * eps);
+					const sinH = Math.sin(rs.heading);
+					const cosH = Math.cos(rs.heading);
+					const tiltT = Math.min(1, 8 * delta);
+					tankPitch += (Math.atan(dhdx * -sinH + dhdz * -cosH) - tankPitch) * tiltT;
+					tankRoll += (Math.atan(dhdx * cosH + dhdz * -sinH) - tankRoll) * tiltT;
+				}
+				// Animate track wheels
+				wheelSpinLeft += rs.speed * 3 * delta;
+				wheelSpinRight += rs.speed * 3 * delta;
 				enginePlaybackRate = 0.5 + Math.abs(speed) * 0.04;
 				return;
 			}
@@ -1569,11 +1585,25 @@
 					if (vDotN < 0) {
 						// Impulse magnitude transferred to B (equal-mass collision formula)
 						const impulse = ((1 + COLLISION_RESTITUTION) / 2) * -vDotN;
-						// Push B in the direction A is moving (−n = toward B from A)
-						body.pushVx -= nx * impulse;
-						body.pushVz -= nz * impulse;
+						if (body.relayIndex >= 0) {
+							// Remote human: their physics runs on their machine and ignores local pushVx/pushVz.
+							// Redirect the reaction impulse onto the local player so they bounce off.
+							ownBody.pushVx += nx * impulse;
+							ownBody.pushVz += nz * impulse;
+						} else {
+							// Push B in the direction A is moving (−n = toward B from A)
+							body.pushVx -= nx * impulse;
+							body.pushVz -= nz * impulse;
+						}
 						// Reduce A's speed by the projected component that was transferred
 						speed -= ((1 + COLLISION_RESTITUTION) / 2) * vDotN * fwdDotN;
+					} else if (body.relayIndex >= 0) {
+						// Remote human drove into us while we're stationary or moving away.
+						// Apply separation push proportional to overlap so we drift away rather than
+						// getting teleport-snapped every frame while they're on top of us.
+						const overlap = minTankDist - dist;
+						ownBody.pushVx += nx * overlap * 0.5;
+						ownBody.pushVz += nz * overlap * 0.5;
 					}
 				}
 			}
