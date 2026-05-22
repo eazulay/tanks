@@ -58,6 +58,73 @@ npm run dev
 
 Then open [http://localhost:5173](http://localhost:5173) in your browser.
 
+## Hosting on cPanel (Passenger + CloudLinux)
+
+### SvelteKit app
+
+1. Build: `npm run build`
+2. In cPanel, set up a Node.js app pointing to the repo root with startup file `app.cjs`
+3. Restart the app from cPanel after each deployment
+
+`app.cjs` is a CommonJS wrapper required by cPanel's Node.js app manager:
+
+```js
+(async () => {
+	await import('./server.js');
+})();
+```
+
+### WebSocket relay
+
+CloudLinux LVE isolates Passenger-managed processes in their own network namespace — Apache's `mod_proxy` cannot reach them directly. The relay must run as a separate systemd service outside the LVE.
+
+**First-time setup (requires root SSH access):**
+
+1. Create `/etc/systemd/system/tanks-relay.service`:
+
+```ini
+[Unit]
+Description=Tank Royale WebSocket Relay
+After=network.target
+
+[Service]
+Type=simple
+User=<cpanel-username>
+Group=<cpanel-username>
+WorkingDirectory=/home/<cpanel-username>/repo/tanks
+ExecStart=/home/<cpanel-username>/nodevenv/repo/tanks/22/bin/node relay-server.mjs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+2. Enable and start:
+
+```bash
+systemctl daemon-reload
+systemctl enable tanks-relay
+systemctl start tanks-relay
+```
+
+3. Add to `/etc/apache2/conf.d/userdata/ssl/2_4/<cpanel-username>/<your-domain>/websocket.conf` (and matching `std/` path for non-SSL connections):
+
+```apache
+ProxyPass /ws ws://127.0.0.1:3001/ws upgrade=websocket
+ProxyPassReverse /ws ws://127.0.0.1:3001/ws
+```
+
+4. Rebuild Apache config: `/scripts/rebuildhttpdconf && systemctl restart httpd`
+
+Port 3001 is arbitrary — if it conflicts with another app, change it in `relay-server.mjs` and in `websocket.conf`.
+
+**After each deployment**, if `relay.ts` changed:
+
+```bash
+systemctl restart tanks-relay
+```
+
 ## Comments about mutiplayer game internals
 
 ### Multiplayer P2P physics (Scene.svelte, relay.ts, +page.svelte, Tank.svelte):
