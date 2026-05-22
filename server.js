@@ -15,7 +15,6 @@ const wss = new WebSocketServer({ noServer: true });
 createRelay(wss);
 
 server.on('upgrade', (request, socket, head) => {
-	console.log(`WebSocket upgrade: ${request.url}`);
 	if (request.url === '/ws') {
 		wss.handleUpgrade(request, socket, head, (ws) => wss.emit('connection', ws));
 	}

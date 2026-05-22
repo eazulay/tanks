@@ -155,8 +155,16 @@ targetRoll  = +Math.atan(slopeRight);
 - **`src/lib/types.ts`** — protocol types. `TankBody.relayIndex`: `-1` = AI/single-player, `≥0` = player relay index. `ShellFiredMsg` includes `tracked` and `firingBodyUid`. `ClientMessage` / `ServerMessage` union types with `parseMessage`/`encodeMessage`.
 - **`src/lib/relay.ts`** — in-memory relay. In-game events use `forwardToAll`. `removeFromRoom(clientId, sendPlayerLeft)`: `player_left` broadcast only on explicit leave (Quit), not on WS disconnect. **Reconnect/rejoin:** on WS close mid-game, `schedulePendingLeave` starts a 20 s grace timer; `handleRejoin` cancels it, remaps `wsToClientId` to the old clientId, sends `rejoin_ack`. On timeout, calls `removeFromRoom(clientId, true)`. `wsToClientId: Map<WebSocket, string>` ensures all message handling uses the canonical identity.
 - **`tsconfig.relay.json`** — separate tsc compile for relay (`src/lib` → `build/`). Needed because adapter-node doesn't bundle files not imported by any route.
-- **`server.js`** — production entry: shared `http.createServer`, WS on `/ws`, listens on `PORT ?? 3000`.
+- **`server.js`** — production entry: shared `http.createServer`, WS on `/ws`, listens on `PORT ?? 3000`. Passenger (cPanel) starts this via `app.cjs`.
+- **`relay-server.mjs`** — standalone relay entry point for production. Runs as a systemd service (`tanks-relay`) on port 3001, separate from Passenger. Start/stop: `systemctl start|stop tanks-relay`. After `npm run build`, restart with `systemctl restart tanks-relay`.
 - **`vite.config.ts` relay plugin** — attaches WS server to Vite's httpServer for single-port dev.
+
+**Production WebSocket setup (tanks.tiyal.com / cPanel + Passenger):** CloudLinux LVE isolates Passenger-managed Node.js processes in their own network namespace — Apache's `mod_proxy` cannot reach `127.0.0.1:3000` inside the LVE. Fix: `relay-server.mjs` runs as a systemd service under the `eyal` user (outside the LVE) on port 3001, which Apache can reach. Apache config at `/etc/apache2/conf.d/userdata/ssl/2_4/eyal/tanks.tiyal.com/websocket.conf` (and matching `std/` path) contains:
+```apache
+ProxyPass /ws ws://127.0.0.1:3001/ws upgrade=websocket
+ProxyPassReverse /ws ws://127.0.0.1:3001/ws
+```
+Systemd service file: `/etc/systemd/system/tanks-relay.service`. After each deployment (`git pull && npm run build`), run `systemctl restart tanks-relay` on the server.
 
 **Peer-to-peer physics:** Each client runs its own tank physics and broadcasts `tank_state` at 10 Hz. Physics host also runs AI and broadcasts their states. Shell owner broadcasts `shell_fired`, and on impact: `shell_removed` + `explosion` + `tree_ignited`. Hit detection follows two rules: (1) every shell is owned by its firer; AI shells are owned by the physics host — the owner creates terrain/tree explosions and sends `shell_removed`; (2) every shell runs on every client — each client checks all shells against its own tank, and the host also checks all shells against AI tanks. No `tank_hit` messages are sent; damage is applied locally where authoritative.
 
