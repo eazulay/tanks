@@ -2,6 +2,8 @@
 
 A 3D tank combat game built with SvelteKit and Three.js. Fight against up to three AI opponents across procedurally generated terrain with hills, water, forests, and snow-capped peaks.
 
+**Play it live at [tanks.tiyal.com](https://tanks.tiyal.com)**
+
 ## Gameplay
 
 You control a tank on a shared battlefield. All tanks spawn on the perimeter facing along the circle. Last tank standing wins.
