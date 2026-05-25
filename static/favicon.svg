@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Sun -->
+  <circle cx="16" cy="20" r="16" fill="#FFEE00"/>
+  <!-- Ground (masks sun below horizon, sits behind tank) -->
+  <rect x="0" y="26" width="32" height="6" fill="#d4b870"/>
+  <!-- Tank at 85% scale centred on (16,20) -->
+  <g transform="translate(16,20) scale(0.85) translate(-16,-20)">
+    <!-- Tracks -->
+    <rect x="1" y="21" width="30" height="9" rx="4" fill="#4a6520"/>
+    <!-- Hull -->
+    <polygon points="3,24 29,24 27,13 10,13" fill="#6a9030"/>
+    <!-- Barrel -->
+    <rect x="0" y="10" width="14" height="3" rx="1" fill="#909878" transform="rotate(20, 12, 11.5)"/>
+    <!-- Turret -->
+    <rect x="12" y="6" width="13" height="10" rx="3" fill="#4a7020"/>
+  </g>
+</svg>
