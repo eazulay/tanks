@@ -1,4 +1,4 @@
-# Tank Royale
+# Tank Supremo
 
 A 3D tank combat game built with SvelteKit and Three.js. Fight against up to three AI opponents across procedurally generated terrain with hills, water, forests, and snow-capped peaks.
 
@@ -84,7 +84,7 @@ CloudLinux LVE isolates Passenger-managed processes in their own network namespa
 
 ```ini
 [Unit]
-Description=Tank Royale WebSocket Relay
+Description=Tank Supremo WebSocket Relay
 After=network.target
 
 [Service]

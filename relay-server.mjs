@@ -3,4 +3,4 @@ import { WebSocketServer } from 'ws';
 
 const wss = new WebSocketServer({ port: 3001 });
 createRelay(wss);
-console.log('Tank Royale relay listening on port 3001');
+console.log('Tank Supremo relay listening on port 3001');

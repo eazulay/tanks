@@ -20,7 +20,7 @@
 <main>
 	<div class="content">
 		<a href="/" class="back-link">← Back</a>
-		<h1>Tank Royale</h1>
+		<h1>Tank Supremo</h1>
 		<p class="subtitle">Single Player Mode</p>
 
 		<div class="settings">

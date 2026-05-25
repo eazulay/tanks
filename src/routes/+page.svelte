@@ -24,7 +24,7 @@
 
 <main>
 	<div class="content">
-		<h1>Tank Royale</h1>
+		<h1>Tank Supremo</h1>
 		<p class="tagline">
 			Command your tank across randomly generated terrain. Outmaneuver the enemy, master the slopes,
 			and be the last one standing.

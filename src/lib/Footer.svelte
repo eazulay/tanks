@@ -20,7 +20,7 @@
 		<div class="modal">
 			<h2>Privacy Policy</h2>
 			<p>
-				Tank Royale stores your chosen player name and game preferences (such as opponent count and
+				Tank Supremo stores your chosen player name and game preferences (such as opponent count and
 				mute setting) in your browser's local storage. This data never leaves your device and is not
 				transmitted to any server.
 			</p>

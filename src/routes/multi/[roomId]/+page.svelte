@@ -136,7 +136,7 @@
 			<div class="top-bar">
 				<a href="/multi" class="back-link">← Lobby</a>
 			</div>
-			<h1>Tank Royale</h1>
+			<h1>Tank Supremo</h1>
 			<p class="subtitle">Multiplayer Mode</p>
 			<div class="join-state error-state">
 				<p class="state-msg">{joinErrorLabel}</p>
@@ -148,7 +148,7 @@
 				<a href="/multi" class="back-link">← Lobby</a>
 				<span class="room-label">Room: <span class="room-code">{routeRoomId}</span></span>
 			</div>
-			<h1>Tank Royale</h1>
+			<h1>Tank Supremo</h1>
 			<p class="subtitle">Multiplayer Mode</p>
 			<div class="join-state">
 				<div class="spinner"></div>

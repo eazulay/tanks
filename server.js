@@ -21,5 +21,5 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 server.listen(port, () => {
-	console.log(`Tank Royale listening on port ${port}`);
+	console.log(`Tank Supremo listening on port ${port}`);
 });

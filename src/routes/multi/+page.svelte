@@ -61,7 +61,7 @@
 			{/if}
 		</div>
 
-		<h1>Tank Royale</h1>
+		<h1>Tank Supremo</h1>
 		<p class="subtitle">Multiplayer Mode</p>
 
 		<div class="status-row">

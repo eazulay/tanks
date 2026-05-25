@@ -27,7 +27,7 @@ No test runner is configured — type checking via `svelte-check` and linting vi
 
 ## Architecture
 
-The game is named **Tank Royale**. It is a SvelteKit + Three.js tanks game using [Threlte](https://threlte.xyz/) (Three.js bindings for Svelte 5).
+The game is named **Tank Supremo**. It is a SvelteKit + Three.js tanks game using [Threlte](https://threlte.xyz/) (Three.js bindings for Svelte 5).
 
 **Route flow:**
 - `src/routes/+page.svelte` — Mode-select: player name input (persisted to `localStorage`), Single Player → `/single`, Multiplayer → `/multi`
