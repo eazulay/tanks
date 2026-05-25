@@ -89,6 +89,8 @@
 		border-radius: 8px;
 		padding: 2rem 2.2rem;
 		max-width: 480px;
+		max-height: calc(100vh - 2rem);
+		overflow-y: auto;
 		width: calc(100% - 2rem);
 		font-family: 'Inter', sans-serif;
 		color: #a8b89a;
