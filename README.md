@@ -138,7 +138,7 @@ Each AI tank runs a four-state machine every frame when `controlled` is false:
 - **engage** — three sub-cases depending on distance to target: approach, back-away, or good-range. The good-range sub-case seeks flat ground before committing to a shot; firing requires the barrel to dwell on the aimed direction for 0.3 s. After 3 consecutive misses the AI repositions by adjusting its min/max engage distance.
 - **cooldown** — 2–3.5 s pause after firing. On expiry the AI reads `lastShellImpact` to derive speed/heading correction biases for the next shot; a confirmed hit resets the biases.
 
-Throughout all states the turret tracks the target via pure geometry (no ballistic solver) so it never snaps to a wrong direction if the solver fails.
+In the back-away sub-case, the turret is pointed at the target via simple `atan2` geometry *before* the ballistic solver runs, so it is never left frozen at a stale angle if the solver fails. During cooldown the same geometric tracking keeps the turret on the last known position while the solver separately pre-aims the barrel elevation for the next shot.
 
 ### Vision
 
