@@ -127,6 +127,31 @@ Port 3001 is arbitrary — if it conflicts with another app, change it in `relay
 systemctl restart tanks-relay
 ```
 
+## Comments about AI internals
+
+### State machine (Tank.svelte)
+
+Each AI tank runs a four-state machine every frame when `controlled` is false:
+
+- **patrol** — drives toward a random `aiPatrolAngle` (biased toward the map centre) while scanning the turret ±60°. Transitions to **engage** on contact, **search** on lost contact.
+- **search** — moves toward the last known position (`aiLastSeenX/Z`). Slows to a creep within 50 units and exits the state when it closes to within 12 units.
+- **engage** — three sub-cases depending on distance to target: approach, back-away, or good-range. The good-range sub-case seeks flat ground before committing to a shot; firing requires the barrel to dwell on the aimed direction for 0.3 s. After 3 consecutive misses the AI repositions by adjusting its min/max engage distance.
+- **cooldown** — 2–3.5 s pause after firing. On expiry the AI reads `lastShellImpact` to derive speed/heading correction biases for the next shot; a confirmed hit resets the biases.
+
+Throughout all states the turret tracks the target via pure geometry (no ballistic solver) so it never snaps to a wrong direction if the solver fails.
+
+### Vision
+
+A 120° FOV cone (dot-product test) combined with line-of-sight sampling along the path to the target. LOS uses `max(16, ceil(dist/5))` samples — one per 5-unit terrain cell — so a narrow hill can't slip between checks. Both FOV and LOS must pass for a new contact; only LOS is required to maintain an existing one.
+
+### Ballistic solver (`aiComputeAim`)
+
+Iterates muzzle speed from `SHELL_MIN` to `SHELL_MAX` in steps of 3 m/s. For each speed it solves the projectile discriminant `v⁴ − g(gd² + 2Δh·v²)` and tests the low-angle solution first, then the high-angle. Shot-correction biases accumulated during cooldown are added at fire time.
+
+### Stuck detection
+
+If the AI is holding a drive key but speed stays below 0.3 m/s for 1.5 s, it forces a hard turn in a fixed direction (`aiStuckTurnDir`). After three stuck cycles it reverses that direction. The counter resets whenever the tank makes progress.
+
 ## Comments about mutiplayer game internals
 
 ### Multiplayer P2P physics (Scene.svelte, relay.ts, +page.svelte, Tank.svelte):
