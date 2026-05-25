@@ -27,10 +27,13 @@
 			<p>
 				When you play multiplayer, your player name and your device's IP address are processed
 				transiently by the game server solely to route game traffic. No personal data is logged,
-				stored persistently, or shared with any third party.
+				stored persistently, or shared with any third party, except Cloudflare which processes
+					traffic in transit (see below).
 			</p>
 			<p>
-				No cookies, analytics, or tracking of any kind are used.
+				No cookies or client-side tracking are used. This site is served through Cloudflare, which
+					processes visitor IP addresses for routing, security, and aggregated anonymous analytics.
+					See <a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noopener noreferrer">Cloudflare's Privacy Policy</a>.
 			</p>
 			<button class="close-btn" onclick={() => (open = false)}>Close</button>
 		</div>
@@ -107,6 +110,15 @@
 
 	p:last-of-type {
 		margin-bottom: 1.4rem;
+	}
+
+	p a {
+		color: #d4a832;
+		text-underline-offset: 2px;
+	}
+
+	p a:hover {
+		color: #e8bf4a;
 	}
 
 	.close-btn {
