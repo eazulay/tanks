@@ -710,10 +710,7 @@
 		font-size: 11px;
 		font-weight: 600;
 		letter-spacing: 0.04em;
-		color: rgba(255, 255, 255, 0.88);
-		text-shadow:
-			0 0 3px rgba(0, 0, 0, 0.9),
-			0 1px 2px rgba(0, 0, 0, 0.7);
+		color: rgba(0, 0, 0, 0.8);
 		overflow: hidden;
 		white-space: nowrap;
 		pointer-events: none;
@@ -723,6 +720,7 @@
 
 	.player-health .bar-name {
 		font-size: 14px;
+		right: 2px;
 	}
 
 	.player-left-notif {
