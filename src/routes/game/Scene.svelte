@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as THREE from 'three';
-	import { T, useThrelte } from '@threlte/core';
+	import { T, useThrelte, useTask } from '@threlte/core';
 	import { useThrelteAudio } from '@threlte/extras';
 	import { browser } from '$app/environment';
 	import { setContext, onMount, onDestroy, untrack } from 'svelte';
@@ -59,6 +59,18 @@
 
 	const { scene } = useThrelte();
 	scene.background = new THREE.Color('#87CEEB');
+
+	const _skyColor = new THREE.Color('#87CEEB');
+	const _darkColor = new THREE.Color('#212e13');
+	let _bgElapsed = 0;
+	// Fade starts 2 s after game over (camera has tipped downward) and completes at 5 s
+	// (aligned with the rotation reaching fully top-down in Tank.svelte).
+	useTask((delta) => {
+		if (!gameOver) return;
+		_bgElapsed += delta;
+		const t = Math.min(1, Math.max(0, (_bgElapsed - 2) / 3));
+		if (t > 0) (scene.background as THREE.Color).lerpColors(_skyColor, _darkColor, t);
+	});
 
 	// --- Terrain generation ---
 	const GRID_SEGS = 150;

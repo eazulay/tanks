@@ -636,12 +636,12 @@
 		top: 38%;
 		left: 50%;
 		transform: translate(-50%, -50%);
+		font-family: 'Bebas Neue', sans-serif;
 		font-size: 5rem;
-		font-weight: 700;
-		color: #ffb0b0;
+		color: #c84030;
 		text-shadow:
-			0 0 40px rgba(0, 0, 0, 0.9),
-			0 4px 12px rgba(0, 0, 0, 0.7);
+			0 2px 4px rgba(0, 0, 0, 0.8),
+			0 0 40px rgba(200, 64, 48, 0.4);
 		pointer-events: none;
 		z-index: 30;
 		letter-spacing: 0.06em;
@@ -650,7 +650,10 @@
 	}
 
 	.gameover-text.won {
-		color: #b8ffaa;
+		color: var(--accent);
+		text-shadow:
+			0 2px 4px rgba(0, 0, 0, 0.8),
+			0 0 40px rgba(212, 168, 50, 0.25);
 	}
 
 	.player-health {
