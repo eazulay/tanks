@@ -644,8 +644,8 @@
 	.mute-box.checked::after {
 		content: '';
 		position: absolute;
-		left: 4px;
-		top: 1px;
+		left: 6px;
+		top: 2px;
 		width: 5px;
 		height: 9px;
 		border: 2px solid var(--accent);
