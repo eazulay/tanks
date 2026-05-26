@@ -881,7 +881,7 @@
 		padding: 0;
 		list-style: none;
 		font-size: 0.75rem;
-		color: #999;
+		color: #ddd;
 		display: flex;
 		flex-direction: column;
 		gap: 0.35rem;
@@ -890,7 +890,7 @@
 	.hint {
 		margin: 0;
 		font-size: 0.75rem;
-		color: #bbb;
+		color: #ddd;
 		background: rgba(15, 15, 15, 0.5);
 		padding: 0.4rem 0.8rem;
 		border-radius: 5px;
