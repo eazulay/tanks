@@ -306,12 +306,9 @@
 </main>
 
 <style>
-	@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&display=swap');
-
 	main {
 		margin: 0;
 		min-height: 100vh;
-		background: radial-gradient(ellipse at 60% 40%, #2a3a1a 0%, #111a08 60%, #0a0f05 100%);
 		display: flex;
 		align-items: flex-start;
 		justify-content: center;
@@ -338,7 +335,7 @@
 	.back-link {
 		font-family: 'Inter', sans-serif;
 		font-size: 0.9rem;
-		color: #7a8a6a;
+		color: var(--text-dim);
 		text-decoration: none;
 		background: none;
 		border: none;
@@ -349,15 +346,14 @@
 	}
 
 	.back-link:hover {
-		color: #a8b89a;
+		color: var(--text-hover);
 	}
 
 	.room-label {
 		flex: 1;
 		text-align: center;
-		font-family: 'Inter', sans-serif;
 		font-size: 0.8rem;
-		color: #5a6a4a;
+		color: var(--text-faint);
 		letter-spacing: 0.04em;
 	}
 
@@ -365,26 +361,18 @@
 		font-family: 'Bebas Neue', sans-serif;
 		font-size: 1.1rem;
 		letter-spacing: 0.2em;
-		color: #d4a832;
+		color: var(--accent);
 	}
 
 	.player-count {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.8rem;
-		color: #5a6a4a;
+		color: var(--text-faint);
 		flex-shrink: 0;
 	}
 
 	h1 {
-		font-family: 'Bebas Neue', sans-serif;
 		font-size: clamp(2.5rem, 7vw, 4.5rem);
-		letter-spacing: 0.06em;
-		color: #d4a832;
-		text-shadow:
-			0 2px 4px rgba(0, 0, 0, 0.8),
-			0 0 40px rgba(212, 168, 50, 0.25);
 		margin: 0 0 0.1rem;
-		line-height: 1;
 		text-align: center;
 	}
 
@@ -392,7 +380,7 @@
 		font-family: 'Bebas Neue', sans-serif;
 		font-size: 1rem;
 		letter-spacing: 0.2em;
-		color: #7a8a6a;
+		color: var(--text-dim);
 		margin: 0 0 1.8rem;
 		text-align: center;
 	}
@@ -411,7 +399,7 @@
 		width: 28px;
 		height: 28px;
 		border: 3px solid rgba(212, 168, 50, 0.2);
-		border-top-color: #d4a832;
+		border-top-color: var(--accent);
 		border-radius: 50%;
 		animation: spin 0.9s linear infinite;
 	}
@@ -423,17 +411,14 @@
 	}
 
 	.state-msg {
-		font-family: 'Inter', sans-serif;
 		font-size: 1rem;
-		color: #a8b89a;
 		margin: 0;
 		text-align: center;
 	}
 
 	.state-hint {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.85rem;
-		color: #5a6a4a;
+		color: var(--text-faint);
 		margin: 0;
 		text-align: center;
 	}
@@ -447,7 +432,7 @@
 		font-size: 1.1rem;
 		letter-spacing: 0.1em;
 		color: #0a0f05;
-		background: #d4a832;
+		background: var(--accent);
 		border-radius: 4px;
 		padding: 0.5em 1.8em;
 		text-decoration: none;
@@ -464,7 +449,7 @@
 		font-family: 'Bebas Neue', sans-serif;
 		font-size: 0.85rem;
 		letter-spacing: 0.2em;
-		color: #5a6a4a;
+		color: var(--text-faint);
 		margin: 0 0 0.6rem;
 	}
 
@@ -495,9 +480,7 @@
 
 	.player-name {
 		flex: 1;
-		font-family: 'Inter', sans-serif;
 		font-size: 0.95rem;
-		color: #a8b89a;
 		display: flex;
 		align-items: center;
 		gap: 0.4rem;
@@ -505,13 +488,12 @@
 	}
 
 	.tag {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.65rem;
 		font-weight: 600;
 		letter-spacing: 0.06em;
 		padding: 0.15em 0.5em;
 		border-radius: 3px;
-		color: #7a8a6a;
+		color: var(--text-dim);
 		background: rgba(122, 138, 106, 0.12);
 		border: 1px solid rgba(122, 138, 106, 0.2);
 		text-transform: uppercase;
@@ -519,7 +501,7 @@
 	}
 
 	.tag-you {
-		color: #d4a832;
+		color: var(--accent);
 		background: rgba(212, 168, 50, 0.1);
 		border-color: rgba(212, 168, 50, 0.25);
 	}
@@ -576,7 +558,7 @@
 	.ai-label {
 		font-family: 'Inter', sans-serif;
 		font-size: 0.9rem;
-		color: #8a9a7a;
+		color: var(--text-dim);
 	}
 
 	/* ---- Radio chips ---- */
@@ -595,8 +577,7 @@
 		border-radius: 4px;
 		border: 1px solid rgba(212, 168, 50, 0.3);
 		background: rgba(212, 168, 50, 0.06);
-		color: #8a9a7a;
-		font-family: 'Bebas Neue', sans-serif;
+		color: var(--text-dim);
 		font-size: 1.1rem;
 		cursor: pointer;
 		transition:
@@ -613,13 +594,13 @@
 	.radio-chip:hover:not(.disabled) {
 		background: rgba(212, 168, 50, 0.14);
 		border-color: rgba(212, 168, 50, 0.5);
-		color: #d4a832;
+		color: var(--accent);
 	}
 
 	.radio-chip.selected {
 		background: rgba(212, 168, 50, 0.2);
-		border-color: #d4a832;
-		color: #d4a832;
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 
 	.radio-chip.disabled {
@@ -657,7 +638,7 @@
 
 	.mute-box.checked {
 		background: rgba(212, 168, 50, 0.25);
-		border-color: #d4a832;
+		border-color: var(--accent);
 	}
 
 	.mute-box.checked::after {
@@ -667,7 +648,7 @@
 		top: 1px;
 		width: 5px;
 		height: 9px;
-		border: 2px solid #d4a832;
+		border: 2px solid var(--accent);
 		border-top: none;
 		border-left: none;
 		transform: rotate(45deg);
@@ -687,7 +668,7 @@
 			background 0.15s,
 			color 0.15s,
 			opacity 0.15s;
-		color: #8a9a7a;
+		color: var(--text-dim);
 		background: rgba(122, 138, 106, 0.1);
 		border: 1px solid rgba(122, 138, 106, 0.25);
 	}
@@ -712,7 +693,6 @@
 	}
 
 	.lock-badge {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.8rem;
 		font-weight: 500;
 		color: #c0801a;
@@ -723,9 +703,8 @@
 	}
 
 	.lock-open {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.8rem;
-		color: #5a6a4a;
+		color: var(--text-faint);
 	}
 
 	/* ---- Join requests ---- */
@@ -746,9 +725,7 @@
 	}
 
 	.joiner-name {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.9rem;
-		color: #a8b89a;
 	}
 
 	.btn-accept {
@@ -798,7 +775,7 @@
 
 	.countdown-bar {
 		height: 100%;
-		background: #d4a832;
+		background: var(--accent);
 		border-radius: 3px;
 		transition: width 0.5s linear;
 	}
@@ -806,16 +783,15 @@
 	.countdown-num {
 		font-family: 'Bebas Neue', sans-serif;
 		font-size: 1.1rem;
-		color: #d4a832;
+		color: var(--accent);
 		min-width: 3ch;
 		text-align: right;
 	}
 
 	.countdown-hint,
 	.waiting-hint {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.85rem;
-		color: #5a6a4a;
+		color: var(--text-faint);
 		margin: 0;
 		text-align: center;
 	}
@@ -837,12 +813,12 @@
 
 	.btn-start {
 		color: #0a0f05;
-		background: #d4a832;
+		background: var(--accent);
 		box-shadow: 0 4px 16px rgba(212, 168, 50, 0.35);
 	}
 
 	.btn-start:hover:not(:disabled) {
-		background: #e8bf4a;
+		background: var(--accent-hover);
 		transform: translateY(-2px);
 		box-shadow: 0 6px 24px rgba(212, 168, 50, 0.5);
 	}

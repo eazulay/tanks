@@ -142,12 +142,9 @@
 <Footer />
 
 <style>
-	@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&display=swap');
-
 	main {
 		margin: 0;
 		min-height: 100vh;
-		background: radial-gradient(ellipse at 60% 40%, #2a3a1a 0%, #111a08 60%, #0a0f05 100%);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -172,45 +169,35 @@
 	}
 
 	.back-link {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.9rem;
-		color: #7a8a6a;
+		color: var(--text-dim);
 		text-decoration: none;
 		transition: color 0.15s;
 	}
 
 	.back-link:hover {
-		color: #a8b89a;
+		color: var(--text-hover);
 	}
 
 	.playing-as {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.85rem;
-		color: #5a6a4a;
+		color: var(--text-faint);
 	}
 
 	.playing-as strong {
-		color: #a8b89a;
 		font-weight: 600;
 	}
 
 	h1 {
-		font-family: 'Bebas Neue', sans-serif;
 		font-size: clamp(2.5rem, 7vw, 4.5rem);
-		letter-spacing: 0.06em;
-		color: #d4a832;
-		text-shadow:
-			0 2px 4px rgba(0, 0, 0, 0.8),
-			0 0 40px rgba(212, 168, 50, 0.25);
 		margin: 0 0 0.1rem;
-		line-height: 1;
 	}
 
 	.subtitle {
 		font-family: 'Bebas Neue', sans-serif;
 		font-size: 1rem;
 		letter-spacing: 0.2em;
-		color: #7a8a6a;
+		color: var(--text-dim);
 		margin: 0 0 1.2rem;
 	}
 
@@ -235,15 +222,12 @@
 	}
 
 	.status-label {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.8rem;
-		color: #5a6a4a;
+		color: var(--text-faint);
 	}
 
 	.rooms-info {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.85rem;
-		color: #a8b89a;
 		text-align: center;
 		margin: 0 0 1.4rem;
 		line-height: 1.55;
@@ -262,9 +246,8 @@
 	}
 
 	.empty-msg {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.9rem;
-		color: #4a5a3a;
+		color: var(--text-faint);
 		text-align: center;
 		padding: 1.8rem 1rem;
 		margin: 0;
@@ -291,7 +274,7 @@
 		font-family: 'Bebas Neue', sans-serif;
 		font-size: 1rem;
 		letter-spacing: 0.15em;
-		color: #d4a832;
+		color: var(--accent);
 		min-width: 68px;
 	}
 
@@ -312,9 +295,8 @@
 	}
 
 	.player-names {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.85rem;
-		color: #8a9a7a;
+		color: var(--text-dim);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -331,7 +313,7 @@
 		font-size: 0.95rem;
 		letter-spacing: 0.1em;
 		color: #0a0f05;
-		background: #d4a832;
+		background: var(--accent);
 		border: none;
 		border-radius: 3px;
 		padding: 0.3em 1.1em;
@@ -342,7 +324,7 @@
 	}
 
 	.btn-join:hover:not(:disabled) {
-		background: #e8bf4a;
+		background: var(--accent-hover);
 	}
 
 	.btn-join:disabled {
@@ -352,7 +334,6 @@
 
 	.badge-locked,
 	.badge-full {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.7rem;
 		font-weight: 500;
 		letter-spacing: 0.06em;
@@ -367,15 +348,14 @@
 	}
 
 	.badge-full {
-		color: #7a8a6a;
+		color: var(--text-dim);
 		background: rgba(122, 138, 106, 0.12);
 		border: 1px solid rgba(122, 138, 106, 0.25);
 	}
 
 	.pending-label {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.8rem;
-		color: #6a7a5a;
+		color: var(--text-faint);
 		font-style: italic;
 	}
 
@@ -383,7 +363,6 @@
 
 	.pending-msg,
 	.error-msg {
-		font-family: 'Inter', sans-serif;
 		font-size: 0.85rem;
 		margin: 0 0 0.8rem;
 		display: flex;
@@ -392,7 +371,7 @@
 	}
 
 	.pending-msg {
-		color: #8a9a7a;
+		color: var(--text-dim);
 	}
 
 	.error-msg {
@@ -404,7 +383,7 @@
 		border: none;
 		font-family: 'Inter', sans-serif;
 		font-size: 0.8rem;
-		color: #5a6a4a;
+		color: var(--text-faint);
 		cursor: pointer;
 		padding: 0;
 		text-decoration: underline;
@@ -412,7 +391,7 @@
 	}
 
 	.btn-text:hover {
-		color: #8a9a7a;
+		color: var(--text-dim);
 	}
 
 	/* ---- Create Room button ---- */
@@ -422,7 +401,7 @@
 		font-size: 1.4rem;
 		letter-spacing: 0.12em;
 		color: #0a0f05;
-		background: #d4a832;
+		background: var(--accent);
 		border: none;
 		border-radius: 4px;
 		padding: 0.7em 2.6em;
@@ -437,7 +416,7 @@
 	}
 
 	.btn-create:hover:not(:disabled) {
-		background: #e8bf4a;
+		background: var(--accent-hover);
 		transform: translateY(-2px);
 		box-shadow: 0 6px 24px rgba(212, 168, 50, 0.5);
 	}

@@ -48,9 +48,7 @@
 		right: 0;
 		text-align: center;
 		padding: 0.6rem;
-		font-family: 'Inter', sans-serif;
 		font-size: 0.72rem;
-		color: rgba(168, 184, 154, 0.7);
 		pointer-events: none;
 		user-select: none;
 	}
@@ -61,7 +59,7 @@
 		border: none;
 		font-family: 'Inter', sans-serif;
 		font-size: 0.72rem;
-		color: rgba(168, 184, 154, 0.7);
+		color: var(--text);
 		cursor: pointer;
 		padding: 0;
 		margin-left: 0.6rem;
@@ -92,15 +90,13 @@
 		max-height: calc(100vh - 2rem);
 		overflow-y: auto;
 		width: calc(100% - 2rem);
-		font-family: 'Inter', sans-serif;
-		color: #a8b89a;
 	}
 
 	h2 {
 		font-family: 'Bebas Neue', sans-serif;
 		font-size: 1.6rem;
 		letter-spacing: 0.1em;
-		color: #d4a832;
+		color: var(--accent);
 		margin: 0 0 1.2rem;
 	}
 
@@ -115,12 +111,12 @@
 	}
 
 	p a {
-		color: #d4a832;
+		color: var(--accent);
 		text-underline-offset: 2px;
 	}
 
 	p a:hover {
-		color: #e8bf4a;
+		color: var(--accent-hover);
 	}
 
 	.close-btn {
@@ -130,7 +126,7 @@
 		font-size: 1.1rem;
 		letter-spacing: 0.12em;
 		color: #0a0f05;
-		background: #d4a832;
+		background: var(--accent);
 		border: none;
 		border-radius: 4px;
 		padding: 0.5em 2em;
@@ -139,6 +135,6 @@
 	}
 
 	.close-btn:hover {
-		background: #e8bf4a;
+		background: var(--accent-hover);
 	}
 </style>

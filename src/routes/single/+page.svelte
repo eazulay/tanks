@@ -52,12 +52,9 @@
 <Footer />
 
 <style>
-	@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500&display=swap');
-
 	main {
 		margin: 0;
 		min-height: 100vh;
-		background: radial-gradient(ellipse at 60% 40%, #2a3a1a 0%, #111a08 60%, #0a0f05 100%);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -74,34 +71,26 @@
 		position: absolute;
 		top: 0;
 		left: 0;
-		font-family: 'Inter', sans-serif;
 		font-size: 0.9rem;
-		color: #7a8a6a;
+		color: var(--text-dim);
 		text-decoration: none;
 		transition: color 0.15s;
 	}
 
 	.back-link:hover {
-		color: #a8b89a;
+		color: var(--text-hover);
 	}
 
 	h1 {
-		font-family: 'Bebas Neue', sans-serif;
 		font-size: clamp(2.5rem, 7vw, 4.5rem);
-		letter-spacing: 0.06em;
-		color: #d4a832;
-		text-shadow:
-			0 2px 4px rgba(0, 0, 0, 0.8),
-			0 0 40px rgba(212, 168, 50, 0.25);
 		margin: 2rem 0 0.2rem;
-		line-height: 1;
 	}
 
 	.subtitle {
 		font-family: 'Bebas Neue', sans-serif;
 		font-size: 1rem;
 		letter-spacing: 0.2em;
-		color: #7a8a6a;
+		color: var(--text-dim);
 		margin: 0 0 2rem;
 	}
 
@@ -114,7 +103,6 @@
 		font-family: 'Bebas Neue', sans-serif;
 		font-size: 0.85rem;
 		letter-spacing: 0.18em;
-		color: #a8b89a;
 		margin-bottom: 0.65rem;
 	}
 
@@ -127,10 +115,9 @@
 	.radio-chip {
 		position: relative;
 		cursor: pointer;
-		font-family: 'Bebas Neue', sans-serif;
 		font-size: 1.35rem;
 		letter-spacing: 0.1em;
-		color: #7a8a6a;
+		color: var(--text-dim);
 		background: rgba(15, 22, 8, 0.7);
 		border: 1px solid #2e3e20;
 		border-radius: 4px;
@@ -144,13 +131,13 @@
 
 	.radio-chip:hover {
 		border-color: #5a6a4a;
-		color: #a8b89a;
+		color: var(--text-hover);
 	}
 
 	.radio-chip.selected {
-		background: #d4a832;
+		background: var(--accent);
 		color: #0a0f05;
-		border-color: #d4a832;
+		border-color: var(--accent);
 	}
 
 	.radio-chip input {
@@ -168,7 +155,6 @@
 		cursor: pointer;
 		font-family: 'Inter', sans-serif;
 		font-size: 0.9rem;
-		color: #a8b89a;
 		user-select: none;
 		margin-top: 1rem;
 	}
@@ -201,8 +187,8 @@
 	}
 
 	.mute-box.checked {
-		background: #d4a832;
-		border-color: #d4a832;
+		background: var(--accent);
+		border-color: var(--accent);
 	}
 
 	.mute-box.checked::after {
@@ -222,7 +208,7 @@
 		font-size: 1.4rem;
 		letter-spacing: 0.12em;
 		color: #0a0f05;
-		background: #d4a832;
+		background: var(--accent);
 		padding: 0.7em 2.6em;
 		border-radius: 4px;
 		text-decoration: none;
@@ -234,7 +220,7 @@
 	}
 
 	.start-btn:hover {
-		background: #e8bf4a;
+		background: var(--accent-hover);
 		transform: translateY(-2px);
 		box-shadow: 0 6px 24px rgba(212, 168, 50, 0.5);
 	}

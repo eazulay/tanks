@@ -1,4 +1,39 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&display=swap');
+
+:root {
+    --accent: #d4a832;
+    --accent-hover: #e8bf4a;
+    --text: #b8c8aa;
+    --text-dim: #96a888;
+    --text-faint: #8aaa78;
+    --text-hover: #c8d8ba;
+    --bg: radial-gradient(ellipse at 60% 40%, #2a3a1a 0%, #111a08 60%, #0a0f05 100%);
+}
+
 html, body {
     margin: 0;
     height: 100%;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    color: var(--text);
+}
+
+main {
+    background: var(--bg);
+}
+
+h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    color: var(--accent);
+    text-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.8),
+        0 0 40px rgba(212, 168, 50, 0.25);
+    letter-spacing: 0.06em;
+    line-height: 1;
+}
+
+label {
+    font-family: 'Bebas Neue', sans-serif;
 }
