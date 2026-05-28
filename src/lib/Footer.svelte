@@ -46,10 +46,6 @@
 
 <style>
 	footer {
-		position: fixed;
-		bottom: 0;
-		left: 0;
-		right: 0;
 		text-align: center;
 		padding: 0.6rem;
 		font-size: 0.72rem;

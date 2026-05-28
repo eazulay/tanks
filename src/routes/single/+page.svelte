@@ -54,7 +54,7 @@
 <style>
 	main {
 		margin: 0;
-		min-height: 100vh;
+		flex: 1;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -64,7 +64,7 @@
 		position: relative;
 		text-align: center;
 		max-width: 560px;
-		padding: 2rem;
+		padding: 2rem 2rem 1rem;
 	}
 
 	.back-link {

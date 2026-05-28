@@ -144,7 +144,7 @@
 <style>
 	main {
 		margin: 0;
-		min-height: 100vh;
+		flex: 1;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -153,7 +153,7 @@
 	.content {
 		width: 100%;
 		max-width: 560px;
-		padding: 2rem;
+		padding: 2rem 2rem 1rem;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
