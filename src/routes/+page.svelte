@@ -181,5 +181,6 @@
 
 	.background-link a:hover {
 		text-decoration: underline;
+		color: var(--accent-hover);
 	}
 </style>

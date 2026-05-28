@@ -28,12 +28,16 @@
 				When you play multiplayer, your player name and your device's IP address are processed
 				transiently by the game server solely to route game traffic. No personal data is logged,
 				stored persistently, or shared with any third party, except Cloudflare which processes
-					traffic in transit (see below).
+				traffic in transit (see below).
 			</p>
 			<p>
 				No cookies or client-side tracking are used. This site is served through Cloudflare, which
-					processes visitor IP addresses for routing, security, and aggregated anonymous analytics.
-					See <a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noopener noreferrer">Cloudflare's Privacy Policy</a>.
+				processes visitor IP addresses for routing, security, and aggregated anonymous analytics.
+				See <a
+					href="https://www.cloudflare.com/privacypolicy/"
+					target="_blank"
+					rel="noopener noreferrer">Cloudflare's Privacy Policy</a
+				>.
 			</p>
 			<button class="close-btn" onclick={() => (open = false)}>Close</button>
 		</div>
@@ -59,16 +63,16 @@
 		border: none;
 		font-family: 'Inter', sans-serif;
 		font-size: 0.72rem;
-		color: var(--text);
+		color: var(--accent);
 		cursor: pointer;
 		padding: 0;
 		margin-left: 0.6rem;
-		text-decoration: underline;
 		text-underline-offset: 2px;
 	}
 
 	.policy-link:hover {
-		color: rgba(212, 168, 50, 0.85);
+		color: var(--accent-hover);
+		text-decoration: underline;
 	}
 
 	.overlay {
