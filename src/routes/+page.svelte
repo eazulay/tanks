@@ -48,9 +48,9 @@
 			</button>
 		</div>
 		<p class="background-link">
-			Curious <a href="https://lnkd.in/efyrcuDc" target="_blank" rel="noopener noreferrer"
-				>how this was built</a
-			>?
+			<a href="https://lnkd.in/efyrcuDc" target="_blank" rel="noopener noreferrer"
+				>The story behind this game</a
+			>
 		</p>
 	</div>
 </main>
