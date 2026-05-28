@@ -47,6 +47,11 @@
 				Multiplayer
 			</button>
 		</div>
+		<p class="background-link">
+			Curious <a href="https://lnkd.in/efyrcuDc" target="_blank" rel="noopener noreferrer"
+				>how this was built</a
+			>?
+		</p>
 	</div>
 </main>
 <Footer />
@@ -161,5 +166,20 @@
 		background: #3a3a2a;
 		transform: none;
 		box-shadow: none;
+	}
+
+	.background-link {
+		margin-top: 2rem;
+		font-size: 0.9rem;
+		color: var(--text-dim);
+	}
+
+	.background-link a {
+		color: var(--accent);
+		text-decoration: none;
+	}
+
+	.background-link a:hover {
+		text-decoration: underline;
 	}
 </style>
