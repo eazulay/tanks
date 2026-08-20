@@ -396,6 +396,7 @@
 	const CUPOLA_H = 1.6; // cupola-top Y above tankPosition.y for LOS origin/target
 	const AI_REPOSITION_MISSES = 3; // consecutive misses before closing or opening the engagement range
 	const AI_STUCK_TIMEOUT = 1.5; // seconds of blocked movement before attempting a terrain detour
+	const AI_DETOUR_MIN_PROGRESS = 5; // units the tank must clear before a detour counts as done
 
 	// AI state — plain lets, reset automatically on component remount (restart)
 	let aiState: 'patrol' | 'search' | 'engage' | 'cooldown' = 'patrol';
@@ -421,6 +422,10 @@
 	let aiMissCount = 0; // consecutive misses — triggers repositioning when high
 	let aiStuckTimer = 0; // seconds the AI has been trying to move with speed near 0
 	let aiStuckTurnDir = 1; // +1 = detour left, -1 = detour right
+	let aiDetourActive = false; // true while persisting a detour until it clears the obstacle
+	let aiDetourStartX = 0; // position where the current detour began, for progress distance
+	let aiDetourStartZ = 0;
+	let aiDetourElapsed = 0; // seconds spent in the current detour attempt
 	let aiBlindShotFired = false; // true after firing once at last-known pos without LOS
 
 	$effect(() => {
@@ -474,8 +479,12 @@
 			touchAimX = d.dx;
 			touchAimY = d.dy;
 		};
-		const onTouchZoom = () => { zoomed = !zoomed; };
-		const onTouchBrake = () => { braking = true; };
+		const onTouchZoom = () => {
+			zoomed = !zoomed;
+		};
+		const onTouchBrake = () => {
+			braking = true;
+		};
 		// iOS suspends any AudioContext created before a user gesture; sources started
 		// against it silently fail and won't recover on resume().  The fix is to create
 		// a brand-new AudioContext inside the gesture (iOS starts it running) and hand
@@ -764,7 +773,10 @@
 			}
 			positionSaveInterval = setInterval(() => {
 				if (tankDestroyed) return;
-				sessionStorage.setItem(SESSION_KEY, JSON.stringify({ x: tankPosition.x, z: tankPosition.z, heading: tankHeading }));
+				sessionStorage.setItem(
+					SESSION_KEY,
+					JSON.stringify({ x: tankPosition.x, z: tankPosition.z, heading: tankHeading })
+				);
 			}, 2000);
 		}
 		// Restore initial health/destroyed for opponent tanks after a page refresh.
@@ -1419,17 +1431,40 @@
 						aiState = hasLos ? 'engage' : 'search';
 					}
 				}
-				// Stuck on terrain: wants to move but speed stays near 0 (slope too steep for heading)
-				if ((upHeld || downHeld) && Math.abs(speed) < 0.3) {
-					aiStuckTimer += delta;
-					if (aiStuckTimer > AI_STUCK_TIMEOUT) {
-						// Override steering to detour around the obstacle; flip side every 3× timeout
+				// Stuck on terrain: wants to move but speed stays near 0 (slope too steep for heading).
+				// Once a detour starts, keep steering away until real progress accumulates —
+				// otherwise a single frame of unblocked speed hands control straight back to the
+				// state's target-seeking steering before the obstacle is actually cleared, and it
+				// immediately re-aims at the same spot (e.g. oscillating in place at a hillside).
+				if (aiDetourActive) {
+					const ddx = tankPosition.x - aiDetourStartX;
+					const ddz = tankPosition.z - aiDetourStartZ;
+					if (ddx * ddx + ddz * ddz > AI_DETOUR_MIN_PROGRESS * AI_DETOUR_MIN_PROGRESS) {
+						aiDetourActive = false;
+						aiStuckTimer = 0;
+					} else {
 						leftHeld = aiStuckTurnDir > 0;
 						rightHeld = aiStuckTurnDir <= 0;
-						if (aiStuckTimer > AI_STUCK_TIMEOUT * 3) {
+						upHeld = true;
+						aiDetourElapsed += delta;
+						if (aiDetourElapsed > AI_STUCK_TIMEOUT * 3) {
+							// This direction isn't working either — flip and restart the measurement
 							aiStuckTurnDir = -aiStuckTurnDir;
-							aiStuckTimer = 0;
+							aiDetourElapsed = 0;
+							aiDetourStartX = tankPosition.x;
+							aiDetourStartZ = tankPosition.z;
 						}
+					}
+				} else if ((upHeld || downHeld) && Math.abs(speed) < 0.3) {
+					aiStuckTimer += delta;
+					if (aiStuckTimer > AI_STUCK_TIMEOUT) {
+						aiDetourActive = true;
+						aiDetourStartX = tankPosition.x;
+						aiDetourStartZ = tankPosition.z;
+						aiDetourElapsed = 0;
+						leftHeld = aiStuckTurnDir > 0;
+						rightHeld = aiStuckTurnDir <= 0;
+						upHeld = true;
 					}
 				} else {
 					aiStuckTimer = 0;
