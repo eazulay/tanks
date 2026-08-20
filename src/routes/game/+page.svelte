@@ -11,6 +11,11 @@
 	const startMuted = page.url.searchParams.get('muted') === '1';
 
 	let tankHealthData = $state<TankHealthEntry[]>([]);
+	// See DEBUG_CAMERA.local.md (gitignored) — gated behind VITE_DEBUG_CAM in Scene.svelte, so
+	// this banner never renders (and its strings aren't even shipped) in ordinary builds.
+	const DEBUG_CAM_ENABLED = import.meta.env.VITE_DEBUG_CAM === '1';
+	let debugMode = $state(false);
+	let debugSpectateIdx = $state<number | null>(null);
 
 	// Compute names/colors/seed at module-init time so Scene.initGame() reads them on first mount.
 	// onMount fires AFTER child components initialise, so any value set there arrives too late.
@@ -388,12 +393,26 @@
 			{isHost}
 			{selfRelayIndex}
 			{relayToLocal}
+			bind:debugMode
+			bind:debugSpectateIdx
 			bind:this={sceneRef}
 		/>
 	</Canvas>
 
 	{#if playerLeftNotif}
 		<div class="player-left-notif">{playerLeftNotif}</div>
+	{/if}
+
+	{#if DEBUG_CAM_ENABLED && debugMode}
+		<div class="player-left-notif">
+			{#if debugSpectateIdx === null}
+				DEBUG MODE · 1‑{opponentCount} selects a tank · Ctrl+` to exit
+			{:else if debugSpectateIdx === 0}
+				DEBUG CAM · returning to you…
+			{:else}
+				DEBUG CAM · {tankNames[debugSpectateIdx] ?? `Opponent ${debugSpectateIdx}`} · Home to return
+			{/if}
+		</div>
 	{/if}
 
 	{#if tankHealthData.length > 0}

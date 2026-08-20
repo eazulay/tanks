@@ -8,7 +8,14 @@
 	import Shell from '$lib/Shell.svelte';
 	import Explosion from '$lib/Explosion.svelte';
 	import Tree from '$lib/Tree.svelte';
-	import type { TankBody, TankHealthEntry, TankSnapshot, TreeVol, TreeTrunk, ShellFollow } from '$lib/types';
+	import type {
+		TankBody,
+		TankHealthEntry,
+		TankSnapshot,
+		TreeVol,
+		TreeTrunk,
+		ShellFollow
+	} from '$lib/types';
 	import { mulberry32 } from '$lib/rand';
 	import { mp, send, TANK_STATE_HZ, setGameHandlers } from '$lib/mp.svelte.js';
 
@@ -23,7 +30,9 @@
 		tankColors = [] as string[],
 		isHost = true,
 		selfRelayIndex = 0,
-		relayToLocal = null as Map<number, number> | null
+		relayToLocal = null as Map<number, number> | null,
+		debugMode = $bindable(false),
+		debugSpectateIdx = $bindable(null) as number | null
 	}: {
 		opponentCount?: number;
 		tankHealthData?: TankHealthEntry[];
@@ -36,6 +45,8 @@
 		isHost?: boolean;
 		selfRelayIndex?: number;
 		relayToLocal?: Map<number, number> | null;
+		debugMode?: boolean;
+		debugSpectateIdx?: number | null;
 	} = $props();
 
 	// Unique audio listener ID per Scene instance — prevents Threlte's addAudioListener guard from
@@ -46,7 +57,7 @@
 	// All clients in a multiplayer game receive the same seed via game_start, guaranteeing
 	// identical terrain, spawns, and tree placement.
 	// untrack: we intentionally capture the initial value only — seed never changes after mount.
-	const gameSeed = untrack(() => seed) ?? ((Math.random() * 2 ** 32) | 0);
+	const gameSeed = untrack(() => seed) ?? (Math.random() * 2 ** 32) | 0;
 	const rand = mulberry32(gameSeed);
 	setContext('audioId', audioId);
 
@@ -296,11 +307,7 @@
 	const TREE_GRID_CELL = 50;
 	const treeVolumeGrid = new Map<string, TreeVol[]>();
 
-	function forNearbyTreeVolumes(
-		x: number,
-		z: number,
-		fn: (vol: TreeVol) => boolean
-	): void {
+	function forNearbyTreeVolumes(x: number, z: number, fn: (vol: TreeVol) => boolean): void {
 		const gx = Math.floor(x / TREE_GRID_CELL);
 		const gz = Math.floor(z / TREE_GRID_CELL);
 		for (let dx = -1; dx <= 1; dx++) {
@@ -413,7 +420,10 @@
 		try {
 			const raw = localStorage.getItem(TERRAIN_SAVE_KEY);
 			if (!raw) return;
-			const parsed = JSON.parse(raw) as { ts: number; vertices: [number, number, number, number, number][] };
+			const parsed = JSON.parse(raw) as {
+				ts: number;
+				vertices: [number, number, number, number, number][];
+			};
 			const posAttr = terrainGeo.attributes.position as THREE.BufferAttribute;
 			const colAttr = terrainGeo.attributes.color as THREE.BufferAttribute;
 			for (const [i, h, r, g, b] of parsed.vertices) {
@@ -465,7 +475,9 @@
 	function saveOppHealthState() {
 		if (!browser) return;
 		try {
-			const data = tankHealthData.slice(1).map((e) => ({ health: e.health, destroyed: e.destroyed }));
+			const data = tankHealthData
+				.slice(1)
+				.map((e) => ({ health: e.health, destroyed: e.destroyed }));
 			sessionStorage.setItem(OPP_HEALTH_KEY, JSON.stringify(data));
 		} catch {
 			// Storage quota exceeded — ignore
@@ -587,8 +599,12 @@
 			send({
 				type: 'shell_fired',
 				shellId: id,
-				x: position.x, y: position.y, z: position.z,
-				vx: velocity.x, vy: velocity.y, vz: velocity.z,
+				x: position.x,
+				y: position.y,
+				z: position.z,
+				vx: velocity.x,
+				vy: velocity.y,
+				vz: velocity.z,
 				tracked: false, // not tracked on other clients
 				firingBodyUid
 			});
@@ -606,9 +622,14 @@
 			send({
 				type: 'shell_fired',
 				shellId: id,
-				x: position.x, y: position.y, z: position.z,
-				vx: velocity.x, vy: velocity.y, vz: velocity.z,
-				tracked: false, firingBodyUid
+				x: position.x,
+				y: position.y,
+				z: position.z,
+				vx: velocity.x,
+				vy: velocity.y,
+				vz: velocity.z,
+				tracked: false,
+				firingBodyUid
 			});
 		}
 	}
@@ -660,7 +681,10 @@
 	const sheetMats = new Map<string, THREE.MeshStandardMaterial>();
 	function getSheetMat(color: string): THREE.MeshStandardMaterial {
 		if (!sheetMats.has(color)) {
-			sheetMats.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.8 }));
+			sheetMats.set(
+				color,
+				new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.8 })
+			);
 		}
 		return sheetMats.get(color)!;
 	}
@@ -693,7 +717,14 @@
 					if (!isHuman && _isHost) {
 						body.lastHit = { dist: 0, wx: position.x, wz: position.z, splash: true };
 					} else {
-						send({ type: 'tank_hit', tankIndex: body.relayIndex, hitDist: 0, wx: position.x, wz: position.z, splash: true });
+						send({
+							type: 'tank_hit',
+							tankIndex: body.relayIndex,
+							hitDist: 0,
+							wx: position.x,
+							wz: position.z,
+							splash: true
+						});
 					}
 				} else {
 					body.lastHit = { dist: 0, wx: position.x, wz: position.z, splash: true };
@@ -704,7 +735,14 @@
 		const id = nextExplodeId++;
 		explosions.push({ id, position, tankExplosion: false });
 		if (_isMultiplayer) {
-			send({ type: 'explosion', x: position.x, y: position.y, z: position.z, tankExplosion: false, color: '' });
+			send({
+				type: 'explosion',
+				x: position.x,
+				y: position.y,
+				z: position.z,
+				tankExplosion: false,
+				color: ''
+			});
 			for (const tid of ignitedTreeIds) send({ type: 'tree_ignited', treeId: tid });
 		}
 		if (tracked) {
@@ -738,15 +776,121 @@
 		if (ignitedTreeIds.length > 0) saveTreeFireState();
 		explosions.push({ id: nextExplodeId++, position, tankExplosion: true, color });
 		if (_isMultiplayer) {
-			send({ type: 'explosion', x: position.x, y: position.y, z: position.z, tankExplosion: true, color });
+			send({
+				type: 'explosion',
+				x: position.x,
+				y: position.y,
+				z: position.z,
+				tankExplosion: true,
+				color
+			});
 			for (const tid of ignitedTreeIds) send({ type: 'tree_ignited', treeId: tid });
 		}
 	}
 
 	let spawnPositions = $state<{ x: number; z: number; heading: number }[]>([]);
-	let tankRef: { reset: (sx: number, sz: number, sh: number) => void; getState: (ri: number) => TankSnapshot } | undefined;
+	let tankRef:
+		| {
+				reset: (sx: number, sz: number, sh: number) => void;
+				getState: (ri: number) => TankSnapshot;
+		  }
+		| undefined;
 	// Opponent tank refs — used by host to read AI state for network broadcast
 	const opponentTankRefs: Array<{ getState: (ri: number) => TankSnapshot } | undefined> = [];
+
+	// --- Hidden debug spectator camera ---
+	// Gated behind VITE_DEBUG_CAM so it's dead-code-eliminated from ordinary production builds —
+	// see DEBUG_CAMERA.local.md (gitignored) for what it does and how to turn it on.
+	const DEBUG_CAM_ENABLED = import.meta.env.VITE_DEBUG_CAM === '1';
+	const debugCamPos = new THREE.Vector3();
+	const debugCamTarget = new THREE.Vector3();
+	let debugCamRef: THREE.PerspectiveCamera | undefined;
+
+	if (DEBUG_CAM_ENABLED) {
+		const DEBUG_CAM_LERP_RATE = 1.1; // per second; lower = slower, more legible glide
+		// Exponential decay never fully reaches its target, so the return handoff needs a "close
+		// enough" cutoff — but that cutoff must be generous (not a couple of units), otherwise the
+		// last stretch of nearly-imperceptible motion still has to fully decay away, which reads
+		// as a long hover once the camera already looks arrived. A hard timeout backstops
+		// long-distance returns so the wait is bounded no matter how far the flight started.
+		const DEBUG_CAM_ARRIVE_DIST_SQ = 100; // squared units (10 units)
+		const DEBUG_CAM_MAX_RETURN_TIME = 2; // seconds
+		let debugReturnElapsed = 0;
+
+		const debugSpectateTarget = (idx: number): TankSnapshot | undefined =>
+			idx === 0 ? tankRef?.getState(_selfRelayIndex) : opponentTankRefs[idx - 1]?.getState(idx);
+
+		const debugReturnToPlayer = () => {
+			if (debugSpectateIdx === null) return;
+			debugSpectateIdx = 0;
+			debugReturnElapsed = 0;
+		};
+
+		const debugSpectate = (n: number) => {
+			if (debugSpectateIdx === null) {
+				// First activation: seed the glide from the player's own tank so the pan shows
+				// where the target sits relative to the player, instead of an origin-anchored jump.
+				const playerState = tankRef?.getState(_selfRelayIndex);
+				if (playerState) debugCamPos.set(playerState.x, playerState.y + 35, playerState.z + 28);
+			}
+			debugSpectateIdx = n;
+		};
+
+		const handleDebugSpectateKey = (e: KeyboardEvent) => {
+			if (e.ctrlKey && e.code === 'Backquote') {
+				e.preventDefault();
+				debugMode = !debugMode;
+				if (!debugMode) debugReturnToPlayer();
+				return;
+			}
+			if (!debugMode) return;
+			if (e.code === 'Home') {
+				e.preventDefault();
+				debugReturnToPlayer();
+				return;
+			}
+			const m = /^Digit([1-9])$/.exec(e.code);
+			if (!m) return;
+			const n = Number(m[1]);
+			if (n >= TANK_COUNT) return;
+			e.preventDefault();
+			debugSpectate(n);
+		};
+
+		onMount(() => {
+			window.addEventListener('keydown', handleDebugSpectateKey);
+			return () => window.removeEventListener('keydown', handleDebugSpectateKey);
+		});
+
+		// Player's own camera (and its light, in Tank.svelte) stays mounted throughout — only
+		// makeDefault toggles — so lighting never drops out while this camera is active. Motion
+		// is always a glide (never a snap) so it reads where the target is relative to whatever
+		// the camera was just looking at. Index 0 is a reserved sentinel for "returning to the
+		// player"; once arrived, control hands off to the player's own (also gradual) camera.
+		useTask((delta) => {
+			if (debugSpectateIdx === null || !debugCamRef) return;
+			const st = debugSpectateTarget(debugSpectateIdx);
+			if (!st) return;
+			debugCamTarget.set(st.x, st.y, st.z);
+			const desiredX = st.x;
+			const desiredY = st.y + 35;
+			const desiredZ = st.z + 28;
+			const t = 1 - Math.exp(-DEBUG_CAM_LERP_RATE * delta);
+			debugCamPos.x += (desiredX - debugCamPos.x) * t;
+			debugCamPos.y += (desiredY - debugCamPos.y) * t;
+			debugCamPos.z += (desiredZ - debugCamPos.z) * t;
+			debugCamRef.position.copy(debugCamPos);
+			debugCamRef.lookAt(debugCamTarget);
+			if (debugSpectateIdx === 0) {
+				debugReturnElapsed += delta;
+				const dx = debugCamPos.x - desiredX;
+				const dy = debugCamPos.y - desiredY;
+				const dz = debugCamPos.z - desiredZ;
+				const arrived = dx * dx + dy * dy + dz * dz < DEBUG_CAM_ARRIVE_DIST_SQ;
+				if (arrived || debugReturnElapsed > DEBUG_CAM_MAX_RETURN_TIME) debugSpectateIdx = null;
+			}
+		});
+	}
 
 	function initGame() {
 		pruneOldTerrainSaves();
@@ -860,7 +1004,10 @@
 			treeVolumes.push(vol);
 			const key = `${Math.floor(t.x / TREE_GRID_CELL)},${Math.floor(t.z / TREE_GRID_CELL)}`;
 			let cell = treeVolumeGrid.get(key);
-			if (!cell) { cell = []; treeVolumeGrid.set(key, cell); }
+			if (!cell) {
+				cell = [];
+				treeVolumeGrid.set(key, cell);
+			}
 			cell.push(vol);
 		}
 
@@ -1055,6 +1202,15 @@
 	<T.MeshBasicMaterial color="#1a6fa8" transparent opacity={0.65} side={THREE.DoubleSide} />
 </T.Mesh>
 
+{#if DEBUG_CAM_ENABLED}
+	<T.PerspectiveCamera
+		makeDefault={debugSpectateIdx !== null}
+		oncreate={(ref) => {
+			debugCamRef = ref as THREE.PerspectiveCamera;
+		}}
+	/>
+{/if}
+
 <Tank
 	controlled
 	chaseCamera
@@ -1070,7 +1226,10 @@
 	onfire={handlePlayerFire}
 	onexplode={handleTankExplosion}
 	onhealthchange={(h, d) => {
-		if (tankHealthData[0]) { tankHealthData[0].health = h; tankHealthData[0].destroyed = d; }
+		if (tankHealthData[0]) {
+			tankHealthData[0].health = h;
+			tankHealthData[0].destroyed = d;
+		}
 	}}
 />
 
@@ -1090,7 +1249,10 @@
 		initialHealth={tankHealthData[localIdx]?.health ?? 100}
 		initialDestroyed={tankHealthData[localIdx]?.destroyed ?? false}
 		onhealthchange={(h, d) => {
-			if (tankHealthData[localIdx]) { tankHealthData[localIdx].health = h; tankHealthData[localIdx].destroyed = d; }
+			if (tankHealthData[localIdx]) {
+				tankHealthData[localIdx].health = h;
+				tankHealthData[localIdx].destroyed = d;
+			}
 			if (d) saveOppHealthState();
 		}}
 		bind:this={opponentTankRefs[localIdx - 1]}
@@ -1117,7 +1279,15 @@
 		onsheetland={(x, y, z, rx, ry, rz, sx, sy, sz) => {
 			landedSheets.push({
 				id: nextSheetId++,
-				x, y, z, rx, ry, rz, sx, sy, sz,
+				x,
+				y,
+				z,
+				rx,
+				ry,
+				rz,
+				sx,
+				sy,
+				sz,
 				color: e.color ?? '#4a3f38'
 			});
 			if (landedSheets.length > MAX_LANDED_SHEETS)
