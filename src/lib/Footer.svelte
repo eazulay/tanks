@@ -1,11 +1,34 @@
 <script>
+	import { onMount } from 'svelte';
+	import FeedbackModal from './FeedbackModal.svelte';
+
 	let open = $state(false);
+	let feedbackOpen = $state(false);
+	let feedbackEnabled = $state(false);
+
+	onMount(async () => {
+		try {
+			const res = await fetch('/api/feedback');
+			const data = await res.json();
+			feedbackEnabled = !!data.enabled;
+		} catch {
+			// Fails toward "hidden" — a network hiccup shouldn't show a feature that might not work.
+			feedbackEnabled = false;
+		}
+	});
 </script>
 
 <footer>
 	© 2026 Eyal Azulay. All rights reserved.
 	<button class="policy-link" onclick={() => (open = true)}>Privacy Policy</button>
+	{#if feedbackEnabled}
+		<button class="policy-link" onclick={() => (feedbackOpen = true)}>Feedback</button>
+	{/if}
 </footer>
+
+{#if feedbackEnabled}
+	<FeedbackModal bind:open={feedbackOpen} />
+{/if}
 
 {#if open}
 	<div
@@ -39,6 +62,13 @@
 					rel="noopener noreferrer">Cloudflare's Privacy Policy</a
 				>.
 			</p>
+			{#if feedbackEnabled}
+				<p>
+					If you submit feedback, we store your message (and your name or email if you choose to
+					provide them) along with your IP address, used only to detect and prevent spam. This is
+					kept to help us improve the game.
+				</p>
+			{/if}
 			<button class="close-btn" onclick={() => (open = false)}>Close</button>
 		</div>
 	</div>
@@ -82,11 +112,12 @@
 	}
 
 	.modal {
+		box-sizing: border-box;
 		background: #111a08;
 		border: 1px solid rgba(212, 168, 50, 0.25);
 		border-radius: 8px;
 		padding: 2rem 2.2rem;
-		max-width: 480px;
+		max-width: 600px;
 		max-height: calc(100vh - 2rem);
 		overflow-y: auto;
 		width: calc(100% - 2rem);

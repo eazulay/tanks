@@ -2,6 +2,7 @@
 // Run after `npm run build`: node server.js
 // cPanel Node.js app startup file: server.js
 
+import 'dotenv/config';
 import { handler } from './build/handler.js';
 import { createRelay } from './build/relay.js';
 import { createServer } from 'http';

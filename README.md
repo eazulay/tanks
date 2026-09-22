@@ -60,6 +60,44 @@ npm run dev
 
 Then open [http://localhost:5173](http://localhost:5173) in your browser.
 
+## Feedback form
+
+Players can leave feedback via a "Feedback" link in the footer, next to the Privacy Policy link. This is entirely optional: if the environment variables below aren't set, the link (and the corresponding paragraph in the Privacy Policy) simply doesn't render, so running the game locally works with zero setup for this feature.
+
+To enable it, create a MySQL database and add these to `.env` (see `.env.example`):
+
+```
+FEEDBACK_APP_ID=
+FEEDBACK_DB_HOST=
+FEEDBACK_DB_PORT=3306
+FEEDBACK_DB_USER=
+FEEDBACK_DB_PASSWORD=
+FEEDBACK_DB_NAME=
+```
+
+`FEEDBACK_APP_ID` is just a numeric identifier for this deployment — useful if you point more than one app at the same shared feedback table and want to tell their rows apart.
+
+Then create the table yourself; the app never runs DDL, so grant its DB user only `SELECT, INSERT, UPDATE` on this one table, not schema-modifying privileges:
+
+```sql
+CREATE TABLE feedback (
+  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  app_id        INT UNSIGNED NOT NULL,
+  message       TEXT         NOT NULL,
+  email         VARCHAR(320) NULL,
+  name          VARCHAR(100) NULL,
+  ip_address    VARCHAR(45)  NULL,
+  approved      TINYINT(1)   NOT NULL DEFAULT 0,
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  digested_at   TIMESTAMP    NULL,
+  INDEX idx_app_created  (app_id, created_at),
+  INDEX idx_app_digested (app_id, digested_at),
+  INDEX idx_app_approved (app_id, approved, created_at)
+);
+```
+
+Submissions are only written to this table — there's no built-in email digest or admin view in this repo. `approved` and `digested_at` are left unset for an external process to use if you want one (e.g. a scheduled digest email, or a moderated public feedback page). Basic spam mitigation is built in: a honeypot field and a per-IP in-memory rate limit (~5 submissions per 10 minutes), both of which respond with a normal-looking success rather than an error so as not to tip off scripted abuse.
+
 ## Hosting on cPanel (Passenger + CloudLinux)
 
 ### SvelteKit app

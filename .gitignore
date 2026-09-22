@@ -24,6 +24,9 @@ Thumbs.db
 # Private notes not meant for the public repo
 *.local.md
 
+# Design specs / working docs, not for the public repo
+/spec
+
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*

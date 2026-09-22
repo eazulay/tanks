@@ -38,6 +38,8 @@
 		"@threlte/core": "^8.0.1",
 		"@threlte/extras": "^9.0.1",
 		"@types/ws": "^8.18.1",
+		"dotenv": "^17.2.3",
+		"mysql2": "^3.14.5",
 		"three": "^0.172.0",
 		"ws": "^8.20.1"
 	}
