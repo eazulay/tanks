@@ -58,11 +58,19 @@ export const POST: RequestHandler = async (event) => {
 
 	const appId = Number(getEnv('FEEDBACK_APP_ID'));
 
-	const pool = getPool();
-	await pool.execute(
-		'INSERT INTO feedback (app_id, message, email, name, ip_address) VALUES (?, ?, ?, ?, ?)',
-		[appId, cleanMessage, cleanEmail, cleanName, ip]
-	);
+	try {
+		const pool = getPool();
+		await pool.execute(
+			'INSERT INTO feedback (app_id, message, email, name, ip_address) VALUES (?, ?, ?, ?, ?)',
+			[appId, cleanMessage, cleanEmail, cleanName, ip]
+		);
+	} catch (err) {
+		// Logged in full server-side for diagnosis; the client only gets a
+		// generic code — the real error (bad DB credentials, connection
+		// refused, etc.) shouldn't be exposed to whoever is submitting feedback.
+		console.error('feedback insert failed:', err);
+		return json({ error: 'server_error' }, { status: 500 });
+	}
 
 	return json({ ok: true }, { status: 201 });
 };

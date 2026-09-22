@@ -50,10 +50,13 @@
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
-				error =
-					data.error === 'invalid_email'
-						? "That email address doesn't look right."
-						: 'Please enter a message.';
+				if (data.error === 'invalid_email') {
+					error = "That email address doesn't look right.";
+				} else if (data.error === 'message_required') {
+					error = 'Please enter a message.';
+				} else {
+					error = 'Something went wrong on our end. Please try again in a moment.';
+				}
 				return;
 			}
 			submitted = true;
