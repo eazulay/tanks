@@ -7,7 +7,11 @@ import { isRateLimited } from '$lib/server/rateLimit';
 const MAX_MESSAGE_LENGTH = 4000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async (event) => {
+	// TEMPORARY diagnostic — remove once ADDRESS_HEADER is confirmed working.
+	console.log('cf-connecting-ip:', event.request.headers.get('cf-connecting-ip'));
+	console.log('x-forwarded-for:', event.request.headers.get('x-forwarded-for'));
+	console.log('getClientAddress():', event.getClientAddress());
 	return json({ enabled: isFeedbackConfigured() });
 };
 
