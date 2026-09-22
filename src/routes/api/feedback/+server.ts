@@ -9,9 +9,11 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const GET: RequestHandler = async (event) => {
 	// TEMPORARY diagnostic — remove once ADDRESS_HEADER is confirmed working.
-	console.log('cf-connecting-ip:', event.request.headers.get('cf-connecting-ip'));
-	console.log('x-forwarded-for:', event.request.headers.get('x-forwarded-for'));
-	console.log('getClientAddress():', event.getClientAddress());
+	// Using console.error rather than console.log since stdout doesn't appear
+	// to reach the same log stream as stderr in this hosting setup.
+	console.error('cf-connecting-ip:', event.request.headers.get('cf-connecting-ip'));
+	console.error('x-forwarded-for:', event.request.headers.get('x-forwarded-for'));
+	console.error('getClientAddress():', event.getClientAddress());
 	return json({ enabled: isFeedbackConfigured() });
 };
 
