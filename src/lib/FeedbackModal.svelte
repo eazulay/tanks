@@ -96,6 +96,10 @@
 					></textarea>
 					<input type="text" bind:value={name} placeholder="Name (optional)" maxlength="100" />
 					<input type="email" bind:value={email} placeholder="Email (optional)" maxlength="320" />
+					<p class="hint">
+						Add your email if you're open to me following up, in case I have questions about your
+						idea.
+					</p>
 					<input
 						type="text"
 						name="website"
@@ -107,9 +111,12 @@
 					{#if error}
 						<p class="error">{error}</p>
 					{/if}
-					<button class="close-btn" type="submit" disabled={submitting}>
-						{submitting ? 'Sending…' : 'Send'}
-					</button>
+					<div class="button-row">
+						<button class="close-btn" type="submit" disabled={submitting}>
+							{submitting ? 'Sending…' : 'Send'}
+						</button>
+						<button class="cancel-btn" type="button" onclick={close}>Cancel</button>
+					</div>
 				</form>
 			{/if}
 		</div>
@@ -186,8 +193,37 @@
 		margin: 0 0 0.9rem;
 	}
 
+	.hint {
+		font-size: 0.75rem;
+		line-height: 1.5;
+		color: var(--text-faint);
+		margin: -0.3rem 0 0;
+	}
+
 	.error {
 		color: #e88;
+	}
+
+	.button-row {
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		gap: 1rem;
+		margin-top: 0.4rem;
+	}
+
+	.cancel-btn {
+		background: none;
+		border: none;
+		font-family: 'Inter', sans-serif;
+		font-size: 0.875rem;
+		color: var(--text-faint);
+		cursor: pointer;
+		padding: 0.5em;
+	}
+
+	.cancel-btn:hover {
+		color: var(--text-hover);
 	}
 
 	.close-btn {
@@ -203,6 +239,10 @@
 		padding: 0.5em 2em;
 		cursor: pointer;
 		transition: background 0.15s;
+	}
+
+	.button-row .close-btn {
+		margin: 0;
 	}
 
 	.close-btn:hover:not(:disabled) {
