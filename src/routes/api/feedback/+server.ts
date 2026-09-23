@@ -8,13 +8,17 @@ const MAX_MESSAGE_LENGTH = 4000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const GET: RequestHandler = async (event) => {
-	// TEMPORARY diagnostic — remove once ADDRESS_HEADER is confirmed working.
-	// Using console.error rather than console.log since stdout doesn't appear
-	// to reach the same log stream as stderr in this hosting setup.
-	console.error('cf-connecting-ip:', event.request.headers.get('cf-connecting-ip'));
-	console.error('x-forwarded-for:', event.request.headers.get('x-forwarded-for'));
-	console.error('getClientAddress():', event.getClientAddress());
-	return json({ enabled: isFeedbackConfigured() });
+	return json({
+		enabled: isFeedbackConfigured(),
+		// TEMPORARY diagnostic — remove once ADDRESS_HEADER is confirmed working.
+		// Returned in the response body instead of logged, since server-side
+		// logging has been unreliable to locate in this hosting setup.
+		_debug: {
+			cfConnectingIp: event.request.headers.get('cf-connecting-ip'),
+			xForwardedFor: event.request.headers.get('x-forwarded-for'),
+			clientAddress: event.getClientAddress()
+		}
+	});
 };
 
 export const POST: RequestHandler = async (event) => {
