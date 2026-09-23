@@ -7,18 +7,8 @@ import { isRateLimited } from '$lib/server/rateLimit';
 const MAX_MESSAGE_LENGTH = 4000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export const GET: RequestHandler = async (event) => {
-	return json({
-		enabled: isFeedbackConfigured(),
-		// TEMPORARY diagnostic — remove once ADDRESS_HEADER is confirmed working.
-		// Returned in the response body instead of logged, since server-side
-		// logging has been unreliable to locate in this hosting setup.
-		_debug: {
-			cfConnectingIp: event.request.headers.get('cf-connecting-ip'),
-			xForwardedFor: event.request.headers.get('x-forwarded-for'),
-			clientAddress: event.getClientAddress()
-		}
-	});
+export const GET: RequestHandler = async () => {
+	return json({ enabled: isFeedbackConfigured() });
 };
 
 export const POST: RequestHandler = async (event) => {
